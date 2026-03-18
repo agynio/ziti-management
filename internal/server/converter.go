@@ -45,7 +45,7 @@ func toProtoIdentityType(value store.IdentityType) (zitimanagementv1.IdentityTyp
 	case store.IdentityTypeChannel:
 		return zitimanagementv1.IdentityType_IDENTITY_TYPE_CHANNEL, nil
 	case store.IdentityTypeUnspecified:
-		return zitimanagementv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED, nil
+		return zitimanagementv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED, fmt.Errorf("identity type unspecified")
 	default:
 		return zitimanagementv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED, fmt.Errorf("unknown identity type %d", value)
 	}
