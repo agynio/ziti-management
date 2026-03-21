@@ -29,13 +29,13 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ZitiManagementServiceClient interface {
-	// Orchestrator → create OpenZiti identity for an agent, return enrollment JWT.
+	// Orchestrator -> create OpenZiti identity for an agent, return enrollment JWT.
 	CreateAgentIdentity(ctx context.Context, in *CreateAgentIdentityRequest, opts ...grpc.CallOption) (*CreateAgentIdentityResponse, error)
-	// Orchestrator → delete OpenZiti identity and its platform mapping.
+	// Orchestrator -> delete OpenZiti identity and its platform mapping.
 	DeleteIdentity(ctx context.Context, in *DeleteIdentityRequest, opts ...grpc.CallOption) (*DeleteIdentityResponse, error)
-	// Orchestrator → list all platform-managed identities (orphan reconciliation).
+	// Orchestrator -> list all platform-managed identities (orphan reconciliation).
 	ListManagedIdentities(ctx context.Context, in *ListManagedIdentitiesRequest, opts ...grpc.CallOption) (*ListManagedIdentitiesResponse, error)
-	// Gateway → map OpenZiti identity ID to platform identity (hot path).
+	// Gateway -> map OpenZiti identity ID to platform identity (hot path).
 	ResolveIdentity(ctx context.Context, in *ResolveIdentityRequest, opts ...grpc.CallOption) (*ResolveIdentityResponse, error)
 }
 
@@ -91,13 +91,13 @@ func (c *zitiManagementServiceClient) ResolveIdentity(ctx context.Context, in *R
 // All implementations should embed UnimplementedZitiManagementServiceServer
 // for forward compatibility.
 type ZitiManagementServiceServer interface {
-	// Orchestrator → create OpenZiti identity for an agent, return enrollment JWT.
+	// Orchestrator -> create OpenZiti identity for an agent, return enrollment JWT.
 	CreateAgentIdentity(context.Context, *CreateAgentIdentityRequest) (*CreateAgentIdentityResponse, error)
-	// Orchestrator → delete OpenZiti identity and its platform mapping.
+	// Orchestrator -> delete OpenZiti identity and its platform mapping.
 	DeleteIdentity(context.Context, *DeleteIdentityRequest) (*DeleteIdentityResponse, error)
-	// Orchestrator → list all platform-managed identities (orphan reconciliation).
+	// Orchestrator -> list all platform-managed identities (orphan reconciliation).
 	ListManagedIdentities(context.Context, *ListManagedIdentitiesRequest) (*ListManagedIdentitiesResponse, error)
-	// Gateway → map OpenZiti identity ID to platform identity (hot path).
+	// Gateway -> map OpenZiti identity ID to platform identity (hot path).
 	ResolveIdentity(context.Context, *ResolveIdentityRequest) (*ResolveIdentityResponse, error)
 }
 

@@ -60,7 +60,6 @@ func toProtoManagedIdentity(identity store.ManagedIdentity) (*zitimanagementv1.M
 		ZitiIdentityId: identity.ZitiIdentityID,
 		IdentityId:     identity.IdentityID.String(),
 		IdentityType:   identityType,
-		TenantId:       identity.TenantID.String(),
 		CreatedAt:      timestamppb.New(identity.CreatedAt),
 	}, nil
 }

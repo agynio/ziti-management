@@ -28,12 +28,8 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "agent_id: %v", err)
 	}
-	tenantID, err := parseUUID(req.GetTenantId())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "tenant_id: %v", err)
-	}
 
-	zitiID, jwt, err := s.ziti.CreateAgentIdentity(ctx, agentID, tenantID)
+	zitiID, jwt, err := s.ziti.CreateAgentIdentity(ctx, agentID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create ziti identity: %v", err)
 	}
@@ -42,7 +38,6 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 		ZitiIdentityID: zitiID,
 		IdentityID:     agentID,
 		IdentityType:   store.IdentityTypeAgent,
-		TenantID:       tenantID,
 	}
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
 		cleanupErr := s.ziti.DeleteIdentity(ctx, zitiID)
@@ -84,13 +79,6 @@ func (s *Server) ListManagedIdentities(ctx context.Context, req *zitimanagementv
 			return nil, status.Errorf(codes.InvalidArgument, "identity_type: %v", err)
 		}
 		filter.IdentityType = &identityType
-	}
-	if req.GetTenantId() != "" {
-		tenantID, err := parseUUID(req.GetTenantId())
-		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "tenant_id: %v", err)
-		}
-		filter.TenantID = &tenantID
 	}
 
 	var cursor *store.PageCursor
@@ -144,7 +132,6 @@ func (s *Server) ResolveIdentity(ctx context.Context, req *zitimanagementv1.Reso
 	return &zitimanagementv1.ResolveIdentityResponse{
 		IdentityId:   identity.IdentityID.String(),
 		IdentityType: identityType,
-		TenantId:     identity.TenantID.String(),
 	}, nil
 }
 

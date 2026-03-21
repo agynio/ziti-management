@@ -79,7 +79,6 @@ type ManagedIdentity struct {
 	ZitiIdentityId string                 `protobuf:"bytes,1,opt,name=ziti_identity_id,json=zitiIdentityId,proto3" json:"ziti_identity_id,omitempty"`
 	IdentityId     string                 `protobuf:"bytes,2,opt,name=identity_id,json=identityId,proto3" json:"identity_id,omitempty"`
 	IdentityType   IdentityType           `protobuf:"varint,3,opt,name=identity_type,json=identityType,proto3,enum=agynio.api.ziti_management.v1.IdentityType" json:"identity_type,omitempty"`
-	TenantId       string                 `protobuf:"bytes,4,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -136,13 +135,6 @@ func (x *ManagedIdentity) GetIdentityType() IdentityType {
 	return IdentityType_IDENTITY_TYPE_UNSPECIFIED
 }
 
-func (x *ManagedIdentity) GetTenantId() string {
-	if x != nil {
-		return x.TenantId
-	}
-	return ""
-}
-
 func (x *ManagedIdentity) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
@@ -153,7 +145,6 @@ func (x *ManagedIdentity) GetCreatedAt() *timestamppb.Timestamp {
 type CreateAgentIdentityRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	TenantId      string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -191,13 +182,6 @@ func (*CreateAgentIdentityRequest) Descriptor() ([]byte, []int) {
 func (x *CreateAgentIdentityRequest) GetAgentId() string {
 	if x != nil {
 		return x.AgentId
-	}
-	return ""
-}
-
-func (x *CreateAgentIdentityRequest) GetTenantId() string {
-	if x != nil {
-		return x.TenantId
 	}
 	return ""
 }
@@ -337,7 +321,6 @@ func (*DeleteIdentityResponse) Descriptor() ([]byte, []int) {
 type ListManagedIdentitiesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	IdentityType  IdentityType           `protobuf:"varint,1,opt,name=identity_type,json=identityType,proto3,enum=agynio.api.ziti_management.v1.IdentityType" json:"identity_type,omitempty"`
-	TenantId      string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	PageToken     string                 `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -379,13 +362,6 @@ func (x *ListManagedIdentitiesRequest) GetIdentityType() IdentityType {
 		return x.IdentityType
 	}
 	return IdentityType_IDENTITY_TYPE_UNSPECIFIED
-}
-
-func (x *ListManagedIdentitiesRequest) GetTenantId() string {
-	if x != nil {
-		return x.TenantId
-	}
-	return ""
 }
 
 func (x *ListManagedIdentitiesRequest) GetPageSize() int32 {
@@ -502,7 +478,6 @@ type ResolveIdentityResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	IdentityId    string                 `protobuf:"bytes,1,opt,name=identity_id,json=identityId,proto3" json:"identity_id,omitempty"`
 	IdentityType  IdentityType           `protobuf:"varint,2,opt,name=identity_type,json=identityType,proto3,enum=agynio.api.ziti_management.v1.IdentityType" json:"identity_type,omitempty"`
-	TenantId      string                 `protobuf:"bytes,3,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -551,38 +526,28 @@ func (x *ResolveIdentityResponse) GetIdentityType() IdentityType {
 	return IdentityType_IDENTITY_TYPE_UNSPECIFIED
 }
 
-func (x *ResolveIdentityResponse) GetTenantId() string {
-	if x != nil {
-		return x.TenantId
-	}
-	return ""
-}
-
 var File_agynio_api_ziti_management_v1_ziti_management_proto protoreflect.FileDescriptor
 
 const file_agynio_api_ziti_management_v1_ziti_management_proto_rawDesc = "" +
 	"\n" +
-	"3agynio/api/ziti_management/v1/ziti_management.proto\x12\x1dagynio.api.ziti_management.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x86\x02\n" +
+	"3agynio/api/ziti_management/v1/ziti_management.proto\x12\x1dagynio.api.ziti_management.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe9\x01\n" +
 	"\x0fManagedIdentity\x12(\n" +
 	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\x12\x1f\n" +
 	"\videntity_id\x18\x02 \x01(\tR\n" +
 	"identityId\x12P\n" +
-	"\ridentity_type\x18\x03 \x01(\x0e2+.agynio.api.ziti_management.v1.IdentityTypeR\fidentityType\x12\x1b\n" +
-	"\ttenant_id\x18\x04 \x01(\tR\btenantId\x129\n" +
+	"\ridentity_type\x18\x03 \x01(\x0e2+.agynio.api.ziti_management.v1.IdentityTypeR\fidentityType\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"T\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"7\n" +
 	"\x1aCreateAgentIdentityRequest\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
-	"\ttenant_id\x18\x02 \x01(\tR\btenantId\"n\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\"n\n" +
 	"\x1bCreateAgentIdentityResponse\x12(\n" +
 	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\x12%\n" +
 	"\x0eenrollment_jwt\x18\x02 \x01(\tR\renrollmentJwt\"A\n" +
 	"\x15DeleteIdentityRequest\x12(\n" +
 	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\"\x18\n" +
-	"\x16DeleteIdentityResponse\"\xc9\x01\n" +
+	"\x16DeleteIdentityResponse\"\xac\x01\n" +
 	"\x1cListManagedIdentitiesRequest\x12P\n" +
 	"\ridentity_type\x18\x01 \x01(\x0e2+.agynio.api.ziti_management.v1.IdentityTypeR\fidentityType\x12\x1b\n" +
-	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x1b\n" +
 	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x04 \x01(\tR\tpageToken\"\x97\x01\n" +
@@ -592,12 +557,11 @@ const file_agynio_api_ziti_management_v1_ziti_management_proto_rawDesc = "" +
 	"identities\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"B\n" +
 	"\x16ResolveIdentityRequest\x12(\n" +
-	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\"\xa9\x01\n" +
+	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\"\x8c\x01\n" +
 	"\x17ResolveIdentityResponse\x12\x1f\n" +
 	"\videntity_id\x18\x01 \x01(\tR\n" +
 	"identityId\x12P\n" +
-	"\ridentity_type\x18\x02 \x01(\x0e2+.agynio.api.ziti_management.v1.IdentityTypeR\fidentityType\x12\x1b\n" +
-	"\ttenant_id\x18\x03 \x01(\tR\btenantId*{\n" +
+	"\ridentity_type\x18\x02 \x01(\x0e2+.agynio.api.ziti_management.v1.IdentityTypeR\fidentityType*{\n" +
 	"\fIdentityType\x12\x1d\n" +
 	"\x19IDENTITY_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13IDENTITY_TYPE_AGENT\x10\x01\x12\x18\n" +
