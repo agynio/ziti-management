@@ -19,11 +19,10 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 func (s *Store) InsertManagedIdentity(ctx context.Context, identity ManagedIdentity) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO managed_identities (ziti_identity_id, identity_id, identity_type, tenant_id) VALUES ($1, $2, $3, $4)`,
+	_, err := s.pool.Exec(ctx, `INSERT INTO managed_identities (ziti_identity_id, identity_id, identity_type) VALUES ($1, $2, $3)`,
 		identity.ZitiIdentityID,
 		identity.IdentityID,
 		identity.IdentityType,
-		identity.TenantID,
 	)
 	if err != nil {
 		return fmt.Errorf("insert managed identity: %w", err)
@@ -43,9 +42,9 @@ func (s *Store) DeleteManagedIdentity(ctx context.Context, zitiIdentityID string
 }
 
 func (s *Store) ResolveIdentity(ctx context.Context, zitiIdentityID string) (ManagedIdentity, error) {
-	row := s.pool.QueryRow(ctx, `SELECT identity_id, identity_type, tenant_id, created_at FROM managed_identities WHERE ziti_identity_id = $1`, zitiIdentityID)
+	row := s.pool.QueryRow(ctx, `SELECT identity_id, identity_type, created_at FROM managed_identities WHERE ziti_identity_id = $1`, zitiIdentityID)
 	identity := ManagedIdentity{ZitiIdentityID: zitiIdentityID}
-	if err := row.Scan(&identity.IdentityID, &identity.IdentityType, &identity.TenantID, &identity.CreatedAt); err != nil {
+	if err := row.Scan(&identity.IdentityID, &identity.IdentityType, &identity.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ManagedIdentity{}, ErrManagedIdentityNotFound
 		}
@@ -63,16 +62,12 @@ func (s *Store) ListManagedIdentities(ctx context.Context, filter ListFilter, pa
 		args = append(args, *filter.IdentityType)
 		clauses = append(clauses, fmt.Sprintf("identity_type = $%d", len(args)))
 	}
-	if filter.TenantID != nil {
-		args = append(args, *filter.TenantID)
-		clauses = append(clauses, fmt.Sprintf("tenant_id = $%d", len(args)))
-	}
 	if cursor != nil {
 		args = append(args, cursor.AfterID)
 		clauses = append(clauses, fmt.Sprintf("ziti_identity_id > $%d", len(args)))
 	}
 
-	query := "SELECT ziti_identity_id, identity_id, identity_type, tenant_id, created_at FROM managed_identities"
+	query := "SELECT ziti_identity_id, identity_id, identity_type, created_at FROM managed_identities"
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ")
 	}
@@ -88,7 +83,7 @@ func (s *Store) ListManagedIdentities(ctx context.Context, filter ListFilter, pa
 	identities := make([]ManagedIdentity, 0)
 	for rows.Next() {
 		var identity ManagedIdentity
-		if err := rows.Scan(&identity.ZitiIdentityID, &identity.IdentityID, &identity.IdentityType, &identity.TenantID, &identity.CreatedAt); err != nil {
+		if err := rows.Scan(&identity.ZitiIdentityID, &identity.IdentityID, &identity.IdentityType, &identity.CreatedAt); err != nil {
 			return ListResult{}, fmt.Errorf("scan managed identity: %w", err)
 		}
 		identities = append(identities, identity)

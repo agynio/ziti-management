@@ -27,11 +27,9 @@ func TestZitiManagementServiceE2E(t *testing.T) {
 	client := zitimanagementv1.NewZitiManagementServiceClient(conn)
 
 	agentID := uuid.NewString()
-	tenantID := uuid.NewString()
 
 	createResp, err := client.CreateAgentIdentity(ctx, &zitimanagementv1.CreateAgentIdentityRequest{
-		AgentId:  agentID,
-		TenantId: tenantID,
+		AgentId: agentID,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, createResp)
@@ -58,7 +56,6 @@ func TestZitiManagementServiceE2E(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, agentID, resolveResp.GetIdentityId())
-	require.Equal(t, tenantID, resolveResp.GetTenantId())
 	require.Equal(t, zitimanagementv1.IdentityType_IDENTITY_TYPE_AGENT, resolveResp.GetIdentityType())
 
 	pageToken := ""
@@ -66,7 +63,6 @@ func TestZitiManagementServiceE2E(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		listResp, err := client.ListManagedIdentities(ctx, &zitimanagementv1.ListManagedIdentitiesRequest{
 			IdentityType: zitimanagementv1.IdentityType_IDENTITY_TYPE_AGENT,
-			TenantId:     tenantID,
 			PageSize:     50,
 			PageToken:    pageToken,
 		})
@@ -76,7 +72,6 @@ func TestZitiManagementServiceE2E(t *testing.T) {
 			if identity.GetZitiIdentityId() == createResp.GetZitiIdentityId() {
 				found = true
 				require.Equal(t, agentID, identity.GetIdentityId())
-				require.Equal(t, tenantID, identity.GetTenantId())
 				require.Equal(t, zitimanagementv1.IdentityType_IDENTITY_TYPE_AGENT, identity.GetIdentityType())
 				require.NotNil(t, identity.GetCreatedAt())
 				break

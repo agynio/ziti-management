@@ -22,13 +22,11 @@ type ManagedIdentity struct {
 	ZitiIdentityID string
 	IdentityID     uuid.UUID
 	IdentityType   IdentityType
-	TenantID       uuid.UUID
 	CreatedAt      time.Time
 }
 
 type ListFilter struct {
 	IdentityType *IdentityType
-	TenantID     *uuid.UUID
 }
 
 type PageCursor struct {

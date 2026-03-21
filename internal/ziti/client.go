@@ -77,13 +77,12 @@ func loadCAPool(caFile string) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID, tenantID uuid.UUID) (string, string, error) {
+func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (string, string, error) {
 	name := fmt.Sprintf("agent-%s-%s", agentID.String(), shortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
 	roleAttrs := rest_model.Attributes{
 		"agents",
-		fmt.Sprintf("tenant-%s", tenantID.String()),
 		fmt.Sprintf("agent-%s", agentID.String()),
 	}
 	externalID := agentID.String()
