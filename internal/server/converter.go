@@ -36,6 +36,21 @@ func fromProtoIdentityType(value zitimanagementv1.IdentityType) (store.IdentityT
 	}
 }
 
+func fromProtoServiceType(value zitimanagementv1.ServiceType) (store.ServiceType, error) {
+	switch value {
+	case zitimanagementv1.ServiceType_SERVICE_TYPE_GATEWAY:
+		return store.ServiceTypeGateway, nil
+	case zitimanagementv1.ServiceType_SERVICE_TYPE_ORCHESTRATOR:
+		return store.ServiceTypeOrchestrator, nil
+	case zitimanagementv1.ServiceType_SERVICE_TYPE_RUNNER:
+		return store.ServiceTypeRunner, nil
+	case zitimanagementv1.ServiceType_SERVICE_TYPE_UNSPECIFIED:
+		return store.ServiceTypeUnspecified, fmt.Errorf("service type unspecified")
+	default:
+		return store.ServiceTypeUnspecified, fmt.Errorf("unknown service type %v", value)
+	}
+}
+
 func toProtoIdentityType(value store.IdentityType) (zitimanagementv1.IdentityType, error) {
 	switch value {
 	case store.IdentityTypeAgent:
@@ -60,7 +75,6 @@ func toProtoManagedIdentity(identity store.ManagedIdentity) (*zitimanagementv1.M
 		ZitiIdentityId: identity.ZitiIdentityID,
 		IdentityId:     identity.IdentityID.String(),
 		IdentityType:   identityType,
-		TenantId:       identity.TenantID.String(),
 		CreatedAt:      timestamppb.New(identity.CreatedAt),
 	}, nil
 }

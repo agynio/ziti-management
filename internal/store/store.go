@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,11 +20,10 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 func (s *Store) InsertManagedIdentity(ctx context.Context, identity ManagedIdentity) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO managed_identities (ziti_identity_id, identity_id, identity_type, tenant_id) VALUES ($1, $2, $3, $4)`,
+	_, err := s.pool.Exec(ctx, `INSERT INTO managed_identities (ziti_identity_id, identity_id, identity_type) VALUES ($1, $2, $3)`,
 		identity.ZitiIdentityID,
 		identity.IdentityID,
 		identity.IdentityType,
-		identity.TenantID,
 	)
 	if err != nil {
 		return fmt.Errorf("insert managed identity: %w", err)
@@ -43,9 +43,9 @@ func (s *Store) DeleteManagedIdentity(ctx context.Context, zitiIdentityID string
 }
 
 func (s *Store) ResolveIdentity(ctx context.Context, zitiIdentityID string) (ManagedIdentity, error) {
-	row := s.pool.QueryRow(ctx, `SELECT identity_id, identity_type, tenant_id, created_at FROM managed_identities WHERE ziti_identity_id = $1`, zitiIdentityID)
+	row := s.pool.QueryRow(ctx, `SELECT identity_id, identity_type, created_at FROM managed_identities WHERE ziti_identity_id = $1`, zitiIdentityID)
 	identity := ManagedIdentity{ZitiIdentityID: zitiIdentityID}
-	if err := row.Scan(&identity.IdentityID, &identity.IdentityType, &identity.TenantID, &identity.CreatedAt); err != nil {
+	if err := row.Scan(&identity.IdentityID, &identity.IdentityType, &identity.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ManagedIdentity{}, ErrManagedIdentityNotFound
 		}
@@ -56,23 +56,19 @@ func (s *Store) ResolveIdentity(ctx context.Context, zitiIdentityID string) (Man
 
 func (s *Store) ListManagedIdentities(ctx context.Context, filter ListFilter, pageSize int32, cursor *PageCursor) (ListResult, error) {
 	limit := normalizePageSize(pageSize)
-	args := make([]any, 0, 4)
-	clauses := make([]string, 0, 3)
+	args := make([]any, 0, 3)
+	clauses := make([]string, 0, 2)
 
 	if filter.IdentityType != nil {
 		args = append(args, *filter.IdentityType)
 		clauses = append(clauses, fmt.Sprintf("identity_type = $%d", len(args)))
-	}
-	if filter.TenantID != nil {
-		args = append(args, *filter.TenantID)
-		clauses = append(clauses, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 	if cursor != nil {
 		args = append(args, cursor.AfterID)
 		clauses = append(clauses, fmt.Sprintf("ziti_identity_id > $%d", len(args)))
 	}
 
-	query := "SELECT ziti_identity_id, identity_id, identity_type, tenant_id, created_at FROM managed_identities"
+	query := "SELECT ziti_identity_id, identity_id, identity_type, created_at FROM managed_identities"
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ")
 	}
@@ -88,7 +84,7 @@ func (s *Store) ListManagedIdentities(ctx context.Context, filter ListFilter, pa
 	identities := make([]ManagedIdentity, 0)
 	for rows.Next() {
 		var identity ManagedIdentity
-		if err := rows.Scan(&identity.ZitiIdentityID, &identity.IdentityID, &identity.IdentityType, &identity.TenantID, &identity.CreatedAt); err != nil {
+		if err := rows.Scan(&identity.ZitiIdentityID, &identity.IdentityID, &identity.IdentityType, &identity.CreatedAt); err != nil {
 			return ListResult{}, fmt.Errorf("scan managed identity: %w", err)
 		}
 		identities = append(identities, identity)
@@ -104,4 +100,62 @@ func (s *Store) ListManagedIdentities(ctx context.Context, filter ListFilter, pa
 		result.NextCursor = &PageCursor{AfterID: nextID}
 	}
 	return result, nil
+}
+
+func (s *Store) InsertServiceIdentity(ctx context.Context, zitiIdentityID string, serviceType ServiceType, leaseExpiresAt time.Time) error {
+	_, err := s.pool.Exec(ctx, `INSERT INTO service_identities (ziti_identity_id, service_type, lease_expires_at) VALUES ($1, $2, $3)`,
+		zitiIdentityID,
+		serviceType,
+		leaseExpiresAt,
+	)
+	if err != nil {
+		return fmt.Errorf("insert service identity: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ExtendServiceIdentityLease(ctx context.Context, zitiIdentityID string, leaseExpiresAt time.Time) error {
+	cmd, err := s.pool.Exec(ctx, `UPDATE service_identities SET lease_expires_at = $2 WHERE ziti_identity_id = $1`,
+		zitiIdentityID,
+		leaseExpiresAt,
+	)
+	if err != nil {
+		return fmt.Errorf("extend service identity lease: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrServiceIdentityNotFound
+	}
+	return nil
+}
+
+func (s *Store) ListExpiredServiceIdentities(ctx context.Context) ([]ServiceIdentity, error) {
+	rows, err := s.pool.Query(ctx, `SELECT ziti_identity_id, service_type, lease_expires_at, created_at FROM service_identities WHERE lease_expires_at < NOW() ORDER BY lease_expires_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list expired service identities: %w", err)
+	}
+	defer rows.Close()
+
+	identities := make([]ServiceIdentity, 0)
+	for rows.Next() {
+		var identity ServiceIdentity
+		if err := rows.Scan(&identity.ZitiIdentityID, &identity.ServiceType, &identity.LeaseExpiresAt, &identity.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan expired service identity: %w", err)
+		}
+		identities = append(identities, identity)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list expired service identities: %w", err)
+	}
+	return identities, nil
+}
+
+func (s *Store) DeleteServiceIdentity(ctx context.Context, zitiIdentityID string) error {
+	cmd, err := s.pool.Exec(ctx, `DELETE FROM service_identities WHERE ziti_identity_id = $1`, zitiIdentityID)
+	if err != nil {
+		return fmt.Errorf("delete service identity: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrServiceIdentityNotFound
+	}
+	return nil
 }

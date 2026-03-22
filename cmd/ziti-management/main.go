@@ -16,6 +16,7 @@ import (
 
 	"github.com/agynio/ziti-management/internal/config"
 	"github.com/agynio/ziti-management/internal/db"
+	"github.com/agynio/ziti-management/internal/gc"
 	"github.com/agynio/ziti-management/internal/server"
 	"github.com/agynio/ziti-management/internal/store"
 	"github.com/agynio/ziti-management/internal/ziti"
@@ -55,8 +56,9 @@ func run() error {
 		return fmt.Errorf("init ziti client: %w", err)
 	}
 
+	storeClient := store.NewStore(pool)
 	grpcServer := grpc.NewServer()
-	zitimanagementv1.RegisterZitiManagementServiceServer(grpcServer, server.New(store.NewStore(pool), zitiClient))
+	zitimanagementv1.RegisterZitiManagementServiceServer(grpcServer, server.New(storeClient, zitiClient, cfg.ServiceIdentityLeaseTTL))
 
 	lis, err := net.Listen("tcp", cfg.GRPCAddress)
 	if err != nil {
@@ -67,6 +69,8 @@ func run() error {
 		<-ctx.Done()
 		grpcServer.GracefulStop()
 	}()
+
+	go gc.RunServiceIdentityGC(ctx, storeClient, zitiClient, cfg.ServiceIdentityGCInterval)
 
 	log.Printf("ZitiManagementService listening on %s", cfg.GRPCAddress)
 
