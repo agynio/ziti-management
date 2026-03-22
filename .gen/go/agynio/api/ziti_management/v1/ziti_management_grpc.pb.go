@@ -19,24 +19,34 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ZitiManagementService_CreateAgentIdentity_FullMethodName   = "/agynio.api.ziti_management.v1.ZitiManagementService/CreateAgentIdentity"
-	ZitiManagementService_DeleteIdentity_FullMethodName        = "/agynio.api.ziti_management.v1.ZitiManagementService/DeleteIdentity"
-	ZitiManagementService_ListManagedIdentities_FullMethodName = "/agynio.api.ziti_management.v1.ZitiManagementService/ListManagedIdentities"
-	ZitiManagementService_ResolveIdentity_FullMethodName       = "/agynio.api.ziti_management.v1.ZitiManagementService/ResolveIdentity"
+	ZitiManagementService_CreateAgentIdentity_FullMethodName    = "/agynio.api.ziti_management.v1.ZitiManagementService/CreateAgentIdentity"
+	ZitiManagementService_DeleteIdentity_FullMethodName         = "/agynio.api.ziti_management.v1.ZitiManagementService/DeleteIdentity"
+	ZitiManagementService_ListManagedIdentities_FullMethodName  = "/agynio.api.ziti_management.v1.ZitiManagementService/ListManagedIdentities"
+	ZitiManagementService_ResolveIdentity_FullMethodName        = "/agynio.api.ziti_management.v1.ZitiManagementService/ResolveIdentity"
+	ZitiManagementService_RequestServiceIdentity_FullMethodName = "/agynio.api.ziti_management.v1.ZitiManagementService/RequestServiceIdentity"
+	ZitiManagementService_ExtendIdentityLease_FullMethodName    = "/agynio.api.ziti_management.v1.ZitiManagementService/ExtendIdentityLease"
 )
 
 // ZitiManagementServiceClient is the client API for ZitiManagementService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ZitiManagementServiceClient interface {
-	// Orchestrator → create OpenZiti identity for an agent, return enrollment JWT.
+	// Orchestrator -> create OpenZiti identity for an agent, return enrollment JWT.
 	CreateAgentIdentity(ctx context.Context, in *CreateAgentIdentityRequest, opts ...grpc.CallOption) (*CreateAgentIdentityResponse, error)
-	// Orchestrator → delete OpenZiti identity and its platform mapping.
+	// Orchestrator -> delete OpenZiti identity and its platform mapping.
 	DeleteIdentity(ctx context.Context, in *DeleteIdentityRequest, opts ...grpc.CallOption) (*DeleteIdentityResponse, error)
-	// Orchestrator → list all platform-managed identities (orphan reconciliation).
+	// Orchestrator -> list all platform-managed identities (orphan reconciliation).
 	ListManagedIdentities(ctx context.Context, in *ListManagedIdentitiesRequest, opts ...grpc.CallOption) (*ListManagedIdentitiesResponse, error)
-	// Gateway → map OpenZiti identity ID to platform identity (hot path).
+	// Gateway -> map OpenZiti identity ID to platform identity (hot path).
 	ResolveIdentity(ctx context.Context, in *ResolveIdentityRequest, opts ...grpc.CallOption) (*ResolveIdentityResponse, error)
+	// Infrastructure services (Gateway, Orchestrator, Runner) -> request an enrolled
+	// OpenZiti identity for the calling service. Ziti Management creates the identity
+	// on the Controller, enrolls it (generates key pair, submits CSR, receives cert),
+	// and returns the enrolled identity to the caller.
+	RequestServiceIdentity(ctx context.Context, in *RequestServiceIdentityRequest, opts ...grpc.CallOption) (*RequestServiceIdentityResponse, error)
+	// Infrastructure services -> extend the lease on a service identity.
+	// Called periodically by the service to prevent GC from deleting the identity.
+	ExtendIdentityLease(ctx context.Context, in *ExtendIdentityLeaseRequest, opts ...grpc.CallOption) (*ExtendIdentityLeaseResponse, error)
 }
 
 type zitiManagementServiceClient struct {
@@ -87,18 +97,46 @@ func (c *zitiManagementServiceClient) ResolveIdentity(ctx context.Context, in *R
 	return out, nil
 }
 
+func (c *zitiManagementServiceClient) RequestServiceIdentity(ctx context.Context, in *RequestServiceIdentityRequest, opts ...grpc.CallOption) (*RequestServiceIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestServiceIdentityResponse)
+	err := c.cc.Invoke(ctx, ZitiManagementService_RequestServiceIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *zitiManagementServiceClient) ExtendIdentityLease(ctx context.Context, in *ExtendIdentityLeaseRequest, opts ...grpc.CallOption) (*ExtendIdentityLeaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExtendIdentityLeaseResponse)
+	err := c.cc.Invoke(ctx, ZitiManagementService_ExtendIdentityLease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ZitiManagementServiceServer is the server API for ZitiManagementService service.
 // All implementations should embed UnimplementedZitiManagementServiceServer
 // for forward compatibility.
 type ZitiManagementServiceServer interface {
-	// Orchestrator → create OpenZiti identity for an agent, return enrollment JWT.
+	// Orchestrator -> create OpenZiti identity for an agent, return enrollment JWT.
 	CreateAgentIdentity(context.Context, *CreateAgentIdentityRequest) (*CreateAgentIdentityResponse, error)
-	// Orchestrator → delete OpenZiti identity and its platform mapping.
+	// Orchestrator -> delete OpenZiti identity and its platform mapping.
 	DeleteIdentity(context.Context, *DeleteIdentityRequest) (*DeleteIdentityResponse, error)
-	// Orchestrator → list all platform-managed identities (orphan reconciliation).
+	// Orchestrator -> list all platform-managed identities (orphan reconciliation).
 	ListManagedIdentities(context.Context, *ListManagedIdentitiesRequest) (*ListManagedIdentitiesResponse, error)
-	// Gateway → map OpenZiti identity ID to platform identity (hot path).
+	// Gateway -> map OpenZiti identity ID to platform identity (hot path).
 	ResolveIdentity(context.Context, *ResolveIdentityRequest) (*ResolveIdentityResponse, error)
+	// Infrastructure services (Gateway, Orchestrator, Runner) -> request an enrolled
+	// OpenZiti identity for the calling service. Ziti Management creates the identity
+	// on the Controller, enrolls it (generates key pair, submits CSR, receives cert),
+	// and returns the enrolled identity to the caller.
+	RequestServiceIdentity(context.Context, *RequestServiceIdentityRequest) (*RequestServiceIdentityResponse, error)
+	// Infrastructure services -> extend the lease on a service identity.
+	// Called periodically by the service to prevent GC from deleting the identity.
+	ExtendIdentityLease(context.Context, *ExtendIdentityLeaseRequest) (*ExtendIdentityLeaseResponse, error)
 }
 
 // UnimplementedZitiManagementServiceServer should be embedded to have
@@ -119,6 +157,12 @@ func (UnimplementedZitiManagementServiceServer) ListManagedIdentities(context.Co
 }
 func (UnimplementedZitiManagementServiceServer) ResolveIdentity(context.Context, *ResolveIdentityRequest) (*ResolveIdentityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveIdentity not implemented")
+}
+func (UnimplementedZitiManagementServiceServer) RequestServiceIdentity(context.Context, *RequestServiceIdentityRequest) (*RequestServiceIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestServiceIdentity not implemented")
+}
+func (UnimplementedZitiManagementServiceServer) ExtendIdentityLease(context.Context, *ExtendIdentityLeaseRequest) (*ExtendIdentityLeaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExtendIdentityLease not implemented")
 }
 func (UnimplementedZitiManagementServiceServer) testEmbeddedByValue() {}
 
@@ -212,6 +256,42 @@ func _ZitiManagementService_ResolveIdentity_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ZitiManagementService_RequestServiceIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestServiceIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ZitiManagementServiceServer).RequestServiceIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ZitiManagementService_RequestServiceIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ZitiManagementServiceServer).RequestServiceIdentity(ctx, req.(*RequestServiceIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ZitiManagementService_ExtendIdentityLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExtendIdentityLeaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ZitiManagementServiceServer).ExtendIdentityLease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ZitiManagementService_ExtendIdentityLease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ZitiManagementServiceServer).ExtendIdentityLease(ctx, req.(*ExtendIdentityLeaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ZitiManagementService_ServiceDesc is the grpc.ServiceDesc for ZitiManagementService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -234,6 +314,14 @@ var ZitiManagementService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveIdentity",
 			Handler:    _ZitiManagementService_ResolveIdentity_Handler,
+		},
+		{
+			MethodName: "RequestServiceIdentity",
+			Handler:    _ZitiManagementService_RequestServiceIdentity_Handler,
+		},
+		{
+			MethodName: "ExtendIdentityLease",
+			Handler:    _ZitiManagementService_ExtendIdentityLease_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

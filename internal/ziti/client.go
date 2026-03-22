@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"github.com/openziti/edge-api/rest_management_api_client/identity"
 	"github.com/openziti/edge-api/rest_model"
 	"github.com/openziti/edge-api/rest_util"
+	"github.com/openziti/sdk-golang/ziti"
+	"github.com/openziti/sdk-golang/ziti/enroll"
 )
 
 var ErrIdentityNotFound = errors.New("identity not found")
@@ -77,13 +80,12 @@ func loadCAPool(caFile string) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID, tenantID uuid.UUID) (string, string, error) {
+func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (string, string, error) {
 	name := fmt.Sprintf("agent-%s-%s", agentID.String(), shortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
 	roleAttrs := rest_model.Attributes{
 		"agents",
-		fmt.Sprintf("tenant-%s", tenantID.String()),
 		fmt.Sprintf("agent-%s", agentID.String()),
 	}
 	externalID := agentID.String()
@@ -109,20 +111,86 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID, ten
 		return "", "", errors.New("create ziti identity response missing id")
 	}
 
+	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
+	if err != nil {
+		return "", "", err
+	}
+	return zitiID, jwt, nil
+}
+
+func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string, roleAttributes []string) (string, []byte, error) {
+	identityType := rest_model.IdentityTypeDevice
+	isAdmin := false
+	attrs := rest_model.Attributes(roleAttributes)
+	params := identity.NewCreateIdentityParamsWithContext(ctx)
+	params.Identity = &rest_model.IdentityCreate{
+		Name:           &name,
+		Type:           &identityType,
+		IsAdmin:        &isAdmin,
+		RoleAttributes: &attrs,
+		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
+	}
+
+	created, err := c.client.Identity.CreateIdentity(params, nil)
+	if err != nil {
+		return "", nil, fmt.Errorf("create ziti identity: %w", err)
+	}
+	if created.Payload == nil || created.Payload.Data == nil {
+		return "", nil, errors.New("create ziti identity response missing data")
+	}
+	zitiID := created.Payload.Data.ID
+	if zitiID == "" {
+		return "", nil, errors.New("create ziti identity response missing id")
+	}
+
+	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
+	if err != nil {
+		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, err)
+	}
+
+	claims, _, err := enroll.ParseToken(jwt)
+	if err != nil {
+		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, fmt.Errorf("parse enrollment token: %w", err))
+	}
+
+	var keyAlg ziti.KeyAlgVar
+	if err := keyAlg.Set("EC"); err != nil {
+		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, fmt.Errorf("set key algorithm: %w", err))
+	}
+	cfg, err := enroll.Enroll(enroll.EnrollmentFlags{Token: claims, KeyAlg: keyAlg})
+	if err != nil {
+		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, fmt.Errorf("enroll identity: %w", err))
+	}
+	identityJSON, err := json.Marshal(cfg)
+	if err != nil {
+		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, fmt.Errorf("marshal identity json: %w", err))
+	}
+	return zitiID, identityJSON, nil
+}
+
+func (c *Client) fetchEnrollmentJWT(ctx context.Context, zitiIdentityID string) (string, error) {
 	detailParams := identity.NewDetailIdentityParamsWithContext(ctx)
-	detailParams.ID = zitiID
+	detailParams.ID = zitiIdentityID
 	detail, err := c.client.Identity.DetailIdentity(detailParams, nil)
 	if err != nil {
-		return "", "", fmt.Errorf("detail ziti identity: %w", err)
+		return "", fmt.Errorf("detail ziti identity: %w", err)
 	}
 	if detail.Payload == nil || detail.Payload.Data == nil || detail.Payload.Data.Enrollment == nil || detail.Payload.Data.Enrollment.Ott == nil {
-		return "", "", errors.New("detail ziti identity response missing enrollment")
+		return "", errors.New("detail ziti identity response missing enrollment")
 	}
 	jwt := detail.Payload.Data.Enrollment.Ott.JWT
 	if jwt == "" {
-		return "", "", errors.New("detail ziti identity response missing enrollment jwt")
+		return "", errors.New("detail ziti identity response missing enrollment jwt")
 	}
-	return zitiID, jwt, nil
+	return jwt, nil
+}
+
+func (c *Client) cleanupServiceIdentity(ctx context.Context, zitiIdentityID string, err error) error {
+	cleanupErr := c.DeleteIdentity(ctx, zitiIdentityID)
+	if cleanupErr == nil || errors.Is(cleanupErr, ErrIdentityNotFound) {
+		return err
+	}
+	return fmt.Errorf("%v; cleanup failed: %w", err, cleanupErr)
 }
 
 func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) error {

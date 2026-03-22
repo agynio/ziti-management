@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -104,4 +105,62 @@ func (s *Store) ListManagedIdentities(ctx context.Context, filter ListFilter, pa
 		result.NextCursor = &PageCursor{AfterID: nextID}
 	}
 	return result, nil
+}
+
+func (s *Store) InsertServiceIdentity(ctx context.Context, zitiIdentityID string, serviceType ServiceType, leaseExpiresAt time.Time) error {
+	_, err := s.pool.Exec(ctx, `INSERT INTO service_identities (ziti_identity_id, service_type, lease_expires_at) VALUES ($1, $2, $3)`,
+		zitiIdentityID,
+		serviceType,
+		leaseExpiresAt,
+	)
+	if err != nil {
+		return fmt.Errorf("insert service identity: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ExtendServiceIdentityLease(ctx context.Context, zitiIdentityID string, leaseExpiresAt time.Time) error {
+	cmd, err := s.pool.Exec(ctx, `UPDATE service_identities SET lease_expires_at = $2 WHERE ziti_identity_id = $1`,
+		zitiIdentityID,
+		leaseExpiresAt,
+	)
+	if err != nil {
+		return fmt.Errorf("extend service identity lease: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrServiceIdentityNotFound
+	}
+	return nil
+}
+
+func (s *Store) ListExpiredServiceIdentities(ctx context.Context) ([]ServiceIdentity, error) {
+	rows, err := s.pool.Query(ctx, `SELECT ziti_identity_id, service_type, lease_expires_at, created_at FROM service_identities WHERE lease_expires_at < NOW() ORDER BY lease_expires_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list expired service identities: %w", err)
+	}
+	defer rows.Close()
+
+	identities := make([]ServiceIdentity, 0)
+	for rows.Next() {
+		var identity ServiceIdentity
+		if err := rows.Scan(&identity.ZitiIdentityID, &identity.ServiceType, &identity.LeaseExpiresAt, &identity.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan expired service identity: %w", err)
+		}
+		identities = append(identities, identity)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list expired service identities: %w", err)
+	}
+	return identities, nil
+}
+
+func (s *Store) DeleteServiceIdentity(ctx context.Context, zitiIdentityID string) error {
+	cmd, err := s.pool.Exec(ctx, `DELETE FROM service_identities WHERE ziti_identity_id = $1`, zitiIdentityID)
+	if err != nil {
+		return fmt.Errorf("delete service identity: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrServiceIdentityNotFound
+	}
+	return nil
 }

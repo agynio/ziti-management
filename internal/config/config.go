@@ -3,15 +3,18 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 type Config struct {
-	GRPCAddress       string
-	DatabaseURL       string
-	ZitiControllerURL string
-	ZitiCertFile      string
-	ZitiKeyFile       string
-	ZitiCAFile        string
+	GRPCAddress               string
+	DatabaseURL               string
+	ZitiControllerURL         string
+	ZitiCertFile              string
+	ZitiKeyFile               string
+	ZitiCAFile                string
+	ServiceIdentityLeaseTTL   time.Duration
+	ServiceIdentityGCInterval time.Duration
 }
 
 func FromEnv() (Config, error) {
@@ -40,5 +43,30 @@ func FromEnv() (Config, error) {
 	if cfg.ZitiCAFile == "" {
 		return Config{}, fmt.Errorf("ZITI_CA_FILE must be set")
 	}
+	leaseTTL, err := durationFromEnv("SERVICE_IDENTITY_LEASE_TTL", 5*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	gcInterval, err := durationFromEnv("SERVICE_IDENTITY_GC_INTERVAL", time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.ServiceIdentityLeaseTTL = leaseTTL
+	cfg.ServiceIdentityGCInterval = gcInterval
 	return cfg, nil
+}
+
+func durationFromEnv(key string, defaultValue time.Duration) (time.Duration, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid duration: %w", key, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be greater than 0", key)
+	}
+	return parsed, nil
 }
