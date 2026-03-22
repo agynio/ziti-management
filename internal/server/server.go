@@ -8,10 +8,10 @@ import (
 	"time"
 
 	zitimanagementv1 "github.com/agynio/ziti-management/.gen/go/agynio/api/ziti_management/v1"
-	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/agynio/ziti-management/internal/id"
 	"github.com/agynio/ziti-management/internal/store"
 	"github.com/agynio/ziti-management/internal/ziti"
 )
@@ -42,7 +42,6 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 		ZitiIdentityID: zitiID,
 		IdentityID:     agentID,
 		IdentityType:   store.IdentityTypeAgent,
-		TenantID:       uuid.Nil,
 	}
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
 		cleanupErr := s.ziti.DeleteIdentity(ctx, zitiID)
@@ -195,7 +194,7 @@ func toStatusError(err error) error {
 }
 
 func serviceIdentityConfig(serviceType store.ServiceType) (string, []string, error) {
-	suffix := shortUUID()
+	suffix := id.ShortUUID()
 	switch serviceType {
 	case store.ServiceTypeGateway:
 		return fmt.Sprintf("svc-gateway-%s", suffix), []string{"gateway-hosts"}, nil
@@ -208,12 +207,4 @@ func serviceIdentityConfig(serviceType store.ServiceType) (string, []string, err
 	default:
 		return "", nil, fmt.Errorf("unknown service type %d", serviceType)
 	}
-}
-
-func shortUUID() string {
-	id := uuid.NewString()
-	if len(id) <= 8 {
-		return id
-	}
-	return id[:8]
 }

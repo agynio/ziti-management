@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/agynio/ziti-management/internal/id"
 	"github.com/google/uuid"
 	"github.com/openziti/edge-api/rest_management_api_client"
 	"github.com/openziti/edge-api/rest_management_api_client/identity"
@@ -81,7 +82,7 @@ func loadCAPool(caFile string) (*x509.CertPool, error) {
 }
 
 func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (string, string, error) {
-	name := fmt.Sprintf("agent-%s-%s", agentID.String(), shortUUID())
+	name := fmt.Sprintf("agent-%s-%s", agentID.String(), id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
 	roleAttrs := rest_model.Attributes{
@@ -190,7 +191,7 @@ func (c *Client) cleanupServiceIdentity(ctx context.Context, zitiIdentityID stri
 	if cleanupErr == nil || errors.Is(cleanupErr, ErrIdentityNotFound) {
 		return err
 	}
-	return fmt.Errorf("%v; cleanup failed: %w", err, cleanupErr)
+	return fmt.Errorf("%w; cleanup failed: %w", err, cleanupErr)
 }
 
 func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) error {
@@ -205,12 +206,4 @@ func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) erro
 		return ErrIdentityNotFound
 	}
 	return fmt.Errorf("delete ziti identity: %w", err)
-}
-
-func shortUUID() string {
-	id := uuid.NewString()
-	if len(id) <= 8 {
-		return id
-	}
-	return id[:8]
 }
