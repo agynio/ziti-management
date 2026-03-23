@@ -96,13 +96,8 @@ configMounts:
     type: secret
     mountPath: /etc/ziti-enrollment
     readOnly: true
-extraVolumeMounts:
-  - name: ziti-data
-    mountPath: /var/lib/ziti
-extraVolumes:
-  - name: ziti-data
-    persistentVolumeClaim:
-      claimName: ziti-management-ziti-data
+extraVolumeMounts: []
+extraVolumes: []
 
 persistence:
   enabled: true
