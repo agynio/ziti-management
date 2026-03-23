@@ -14,7 +14,8 @@ image:
 
 replicaCount: 1
 revisionHistoryLimit: 10
-updateStrategy: {}
+updateStrategy:
+  type: Recreate
 
 deploymentAnnotations: {}
 
@@ -77,24 +78,33 @@ env:
   - name: ZITI_CONTROLLER_URL
     value: ""
   - name: ZITI_CERT_FILE
-    value: "/etc/ziti/tls.crt"
+    value: "/var/lib/ziti/tls.crt"
   - name: ZITI_KEY_FILE
-    value: "/etc/ziti/tls.key"
+    value: "/var/lib/ziti/tls.key"
   - name: ZITI_CA_FILE
-    value: "/etc/ziti/ca.crt"
+    value: "/var/lib/ziti/ca.crt"
+  - name: ZITI_ENROLLMENT_JWT_FILE
+    value: "/etc/ziti-enrollment/enrollmentJwt"
 envFrom: []
 extraEnvVars: []
 extraEnvVarsCM: ""
 extraEnvVarsSecret: ""
 
 configMounts:
-  - name: ziti-certs
-    sourceName: ziti-certs
+  - name: ziti-enrollment
+    sourceName: ziti-enrollment
     type: secret
-    mountPath: /etc/ziti
+    mountPath: /etc/ziti-enrollment
     readOnly: true
 extraVolumeMounts: []
 extraVolumes: []
+
+persistence:
+  enabled: true
+  accessMode: ReadWriteOnce
+  size: 10Mi
+  storageClass: ""
+  annotations: {}
 
 initContainers: []
 extraContainers: []

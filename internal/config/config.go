@@ -13,6 +13,7 @@ type Config struct {
 	ZitiCertFile              string
 	ZitiKeyFile               string
 	ZitiCAFile                string
+	ZitiEnrollmentJWTFile     string
 	ServiceIdentityLeaseTTL   time.Duration
 	ServiceIdentityGCInterval time.Duration
 }
@@ -43,6 +44,7 @@ func FromEnv() (Config, error) {
 	if cfg.ZitiCAFile == "" {
 		return Config{}, fmt.Errorf("ZITI_CA_FILE must be set")
 	}
+	cfg.ZitiEnrollmentJWTFile = os.Getenv("ZITI_ENROLLMENT_JWT_FILE")
 	leaseTTL, err := durationFromEnv("SERVICE_IDENTITY_LEASE_TTL", 5*time.Minute)
 	if err != nil {
 		return Config{}, err
