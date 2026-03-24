@@ -16,6 +16,7 @@ const (
 	IdentityTypeUnspecified IdentityType = 0
 	IdentityTypeAgent       IdentityType = 1
 	IdentityTypeRunner      IdentityType = 2
+	IdentityTypeChannel     IdentityType = 3
 	IdentityTypeApp         IdentityType = 5 // Matches agynio.api.identity.v1.IdentityType enum values.
 )
 
