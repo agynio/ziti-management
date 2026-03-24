@@ -17,6 +17,7 @@ const (
 	IdentityTypeAgent       IdentityType = 1
 	IdentityTypeRunner      IdentityType = 2
 	IdentityTypeChannel     IdentityType = 3
+	IdentityTypeApp         IdentityType = 5 // Matches agynio.api.identity.v1.IdentityType enum values.
 )
 
 type ServiceType int16
@@ -32,6 +33,7 @@ type ManagedIdentity struct {
 	ZitiIdentityID string
 	IdentityID     uuid.UUID
 	IdentityType   IdentityType
+	ZitiServiceID  *string
 	CreatedAt      time.Time
 }
 
