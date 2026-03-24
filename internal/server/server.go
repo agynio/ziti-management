@@ -70,7 +70,6 @@ func (s *Server) CreateAppIdentity(ctx context.Context, req *zitimanagementv1.Cr
 	if slug == "" {
 		return nil, status.Error(codes.InvalidArgument, "slug is required")
 	}
-
 	zitiID, identityJSON, err := s.createManagedIdentity(ctx, appID, store.IdentityTypeApp, func() (string, []byte, error) {
 		createdID, createdJSON, createErr := s.ziti.CreateAndEnrollAppIdentity(ctx, appID, slug)
 		if createErr != nil {
