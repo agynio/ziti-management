@@ -35,13 +35,12 @@ const (
 type ZitiManagementServiceClient interface {
 	// Orchestrator -> create OpenZiti identity for an agent, return enrollment JWT.
 	CreateAgentIdentity(ctx context.Context, in *CreateAgentIdentityRequest, opts ...grpc.CallOption) (*CreateAgentIdentityResponse, error)
-	// Creates an OpenZiti identity and service for an app.
-	// The identity gets roleAttributes ["apps"], the service gets
-	// roleAttributes ["app-services"]. Returns enrolled credentials.
+	// Apps Service -> create an OpenZiti identity and service for an app.
+	// Returns enrolled credentials and the service ID.
 	CreateAppIdentity(ctx context.Context, in *CreateAppIdentityRequest, opts ...grpc.CallOption) (*CreateAppIdentityResponse, error)
 	// Orchestrator -> delete OpenZiti identity and its platform mapping.
 	DeleteIdentity(ctx context.Context, in *DeleteIdentityRequest, opts ...grpc.CallOption) (*DeleteIdentityResponse, error)
-	// Deletes an app's OpenZiti identity and its associated service.
+	// Apps Service -> delete an app's OpenZiti identity and its associated service.
 	DeleteAppIdentity(ctx context.Context, in *DeleteAppIdentityRequest, opts ...grpc.CallOption) (*DeleteAppIdentityResponse, error)
 	// Orchestrator -> list all platform-managed identities (orphan reconciliation).
 	ListManagedIdentities(ctx context.Context, in *ListManagedIdentitiesRequest, opts ...grpc.CallOption) (*ListManagedIdentitiesResponse, error)
@@ -151,13 +150,12 @@ func (c *zitiManagementServiceClient) ExtendIdentityLease(ctx context.Context, i
 type ZitiManagementServiceServer interface {
 	// Orchestrator -> create OpenZiti identity for an agent, return enrollment JWT.
 	CreateAgentIdentity(context.Context, *CreateAgentIdentityRequest) (*CreateAgentIdentityResponse, error)
-	// Creates an OpenZiti identity and service for an app.
-	// The identity gets roleAttributes ["apps"], the service gets
-	// roleAttributes ["app-services"]. Returns enrolled credentials.
+	// Apps Service -> create an OpenZiti identity and service for an app.
+	// Returns enrolled credentials and the service ID.
 	CreateAppIdentity(context.Context, *CreateAppIdentityRequest) (*CreateAppIdentityResponse, error)
 	// Orchestrator -> delete OpenZiti identity and its platform mapping.
 	DeleteIdentity(context.Context, *DeleteIdentityRequest) (*DeleteIdentityResponse, error)
-	// Deletes an app's OpenZiti identity and its associated service.
+	// Apps Service -> delete an app's OpenZiti identity and its associated service.
 	DeleteAppIdentity(context.Context, *DeleteAppIdentityRequest) (*DeleteAppIdentityResponse, error)
 	// Orchestrator -> list all platform-managed identities (orphan reconciliation).
 	ListManagedIdentities(context.Context, *ListManagedIdentitiesRequest) (*ListManagedIdentitiesResponse, error)

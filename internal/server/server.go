@@ -123,16 +123,9 @@ func (s *Server) DeleteAppIdentity(ctx context.Context, req *zitimanagementv1.De
 	if zitiID == "" {
 		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
 	}
-
-	identity, err := s.store.GetManagedIdentity(ctx, zitiID)
-	if err != nil {
-		return nil, toStatusError(err)
-	}
-	if identity.IdentityType != store.IdentityTypeApp {
-		return nil, status.Errorf(codes.FailedPrecondition, "managed identity %s is not an app identity", zitiID)
-	}
-	if identity.ZitiServiceID == "" {
-		return nil, status.Errorf(codes.Internal, "managed identity %s missing ziti service id", zitiID)
+	zitiServiceID := req.GetZitiServiceId()
+	if zitiServiceID == "" {
+		return nil, status.Error(codes.InvalidArgument, "ziti_service_id is required")
 	}
 
 	if err := s.store.DeleteManagedIdentity(ctx, zitiID); err != nil {
@@ -144,9 +137,9 @@ func (s *Server) DeleteAppIdentity(ctx context.Context, req *zitimanagementv1.De
 			log.Printf("failed to cleanup ziti identity %s: %v", zitiID, err)
 		}
 	}
-	if err := s.ziti.DeleteService(ctx, identity.ZitiServiceID); err != nil {
+	if err := s.ziti.DeleteService(ctx, zitiServiceID); err != nil {
 		if !errors.Is(err, ziti.ErrServiceNotFound) {
-			log.Printf("failed to cleanup ziti service %s: %v", identity.ZitiServiceID, err)
+			log.Printf("failed to cleanup ziti service %s: %v", zitiServiceID, err)
 		}
 	}
 

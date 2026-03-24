@@ -353,10 +353,11 @@ func (x *CreateAppIdentityResponse) GetZitiServiceId() string {
 	return ""
 }
 
-// Request to delete an app's OpenZiti identity.
+// Request to delete an app's OpenZiti identity and service.
 type DeleteAppIdentityRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ZitiIdentityId string                 `protobuf:"bytes,1,opt,name=ziti_identity_id,json=zitiIdentityId,proto3" json:"ziti_identity_id,omitempty"`
+	ZitiServiceId  string                 `protobuf:"bytes,2,opt,name=ziti_service_id,json=zitiServiceId,proto3" json:"ziti_service_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -394,6 +395,13 @@ func (*DeleteAppIdentityRequest) Descriptor() ([]byte, []int) {
 func (x *DeleteAppIdentityRequest) GetZitiIdentityId() string {
 	if x != nil {
 		return x.ZitiIdentityId
+	}
+	return ""
+}
+
+func (x *DeleteAppIdentityRequest) GetZitiServiceId() string {
+	if x != nil {
+		return x.ZitiServiceId
 	}
 	return ""
 }
@@ -927,9 +935,10 @@ const file_agynio_api_ziti_management_v1_ziti_management_proto_rawDesc = "" +
 	"\x19CreateAppIdentityResponse\x12(\n" +
 	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\x12#\n" +
 	"\ridentity_json\x18\x02 \x01(\fR\fidentityJson\x12&\n" +
-	"\x0fziti_service_id\x18\x03 \x01(\tR\rzitiServiceId\"D\n" +
+	"\x0fziti_service_id\x18\x03 \x01(\tR\rzitiServiceId\"l\n" +
 	"\x18DeleteAppIdentityRequest\x12(\n" +
-	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\"\x1b\n" +
+	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\x12&\n" +
+	"\x0fziti_service_id\x18\x02 \x01(\tR\rzitiServiceId\"\x1b\n" +
 	"\x19DeleteAppIdentityResponse\"A\n" +
 	"\x15DeleteIdentityRequest\x12(\n" +
 	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\"\x18\n" +
