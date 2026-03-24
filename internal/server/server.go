@@ -60,7 +60,7 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 }
 
 func (s *Server) CreateAppIdentity(ctx context.Context, req *zitimanagementv1.CreateAppIdentityRequest) (*zitimanagementv1.CreateAppIdentityResponse, error) {
-	appID, err := parseUUID(req.GetAppId())
+	appID, err := parseUUID(req.GetIdentityId())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "app_id: %v", err)
 	}

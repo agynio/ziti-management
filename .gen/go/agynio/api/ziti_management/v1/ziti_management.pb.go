@@ -242,7 +242,7 @@ func (x *CreateAgentIdentityResponse) GetEnrollmentJwt() string {
 // Request to create an OpenZiti identity and service for an app.
 type CreateAppIdentityRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	IdentityId    string                 `protobuf:"bytes,1,opt,name=identity_id,json=identityId,proto3" json:"identity_id,omitempty"`
 	Slug          string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -278,9 +278,9 @@ func (*CreateAppIdentityRequest) Descriptor() ([]byte, []int) {
 	return file_agynio_api_ziti_management_v1_ziti_management_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *CreateAppIdentityRequest) GetAppId() string {
+func (x *CreateAppIdentityRequest) GetIdentityId() string {
 	if x != nil {
-		return x.AppId
+		return x.IdentityId
 	}
 	return ""
 }
@@ -928,9 +928,10 @@ const file_agynio_api_ziti_management_v1_ziti_management_proto_rawDesc = "" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\"n\n" +
 	"\x1bCreateAgentIdentityResponse\x12(\n" +
 	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\x12%\n" +
-	"\x0eenrollment_jwt\x18\x02 \x01(\tR\renrollmentJwt\"E\n" +
-	"\x18CreateAppIdentityRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x12\n" +
+	"\x0eenrollment_jwt\x18\x02 \x01(\tR\renrollmentJwt\"O\n" +
+	"\x18CreateAppIdentityRequest\x12\x1f\n" +
+	"\videntity_id\x18\x01 \x01(\tR\n" +
+	"identityId\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\"\x92\x01\n" +
 	"\x19CreateAppIdentityResponse\x12(\n" +
 	"\x10ziti_identity_id\x18\x01 \x01(\tR\x0ezitiIdentityId\x12#\n" +
