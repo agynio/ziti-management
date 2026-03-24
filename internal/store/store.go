@@ -20,18 +20,6 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 func (s *Store) InsertManagedIdentity(ctx context.Context, identity ManagedIdentity) error {
-	if identity.ZitiServiceID == "" {
-		_, err := s.pool.Exec(ctx, `INSERT INTO managed_identities (ziti_identity_id, identity_id, identity_type) VALUES ($1, $2, $3)`,
-			identity.ZitiIdentityID,
-			identity.IdentityID,
-			identity.IdentityType,
-		)
-		if err != nil {
-			return fmt.Errorf("insert managed identity: %w", err)
-		}
-		return nil
-	}
-
 	_, err := s.pool.Exec(ctx, `INSERT INTO managed_identities (ziti_identity_id, identity_id, identity_type, ziti_service_id) VALUES ($1, $2, $3, $4)`,
 		identity.ZitiIdentityID,
 		identity.IdentityID,
@@ -58,15 +46,11 @@ func (s *Store) DeleteManagedIdentity(ctx context.Context, zitiIdentityID string
 func (s *Store) ResolveIdentity(ctx context.Context, zitiIdentityID string) (ManagedIdentity, error) {
 	row := s.pool.QueryRow(ctx, `SELECT identity_id, identity_type, ziti_service_id, created_at FROM managed_identities WHERE ziti_identity_id = $1`, zitiIdentityID)
 	identity := ManagedIdentity{ZitiIdentityID: zitiIdentityID}
-	var zitiServiceID *string
-	if err := row.Scan(&identity.IdentityID, &identity.IdentityType, &zitiServiceID, &identity.CreatedAt); err != nil {
+	if err := row.Scan(&identity.IdentityID, &identity.IdentityType, &identity.ZitiServiceID, &identity.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ManagedIdentity{}, ErrManagedIdentityNotFound
 		}
 		return ManagedIdentity{}, fmt.Errorf("resolve identity: %w", err)
-	}
-	if zitiServiceID != nil {
-		identity.ZitiServiceID = *zitiServiceID
 	}
 	return identity, nil
 }
@@ -101,12 +85,8 @@ func (s *Store) ListManagedIdentities(ctx context.Context, filter ListFilter, pa
 	identities := make([]ManagedIdentity, 0)
 	for rows.Next() {
 		var identity ManagedIdentity
-		var zitiServiceID *string
-		if err := rows.Scan(&identity.ZitiIdentityID, &identity.IdentityID, &identity.IdentityType, &zitiServiceID, &identity.CreatedAt); err != nil {
+		if err := rows.Scan(&identity.ZitiIdentityID, &identity.IdentityID, &identity.IdentityType, &identity.ZitiServiceID, &identity.CreatedAt); err != nil {
 			return ListResult{}, fmt.Errorf("scan managed identity: %w", err)
-		}
-		if zitiServiceID != nil {
-			identity.ZitiServiceID = *zitiServiceID
 		}
 		identities = append(identities, identity)
 	}
