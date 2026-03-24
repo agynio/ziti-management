@@ -119,7 +119,6 @@ func (s *Server) DeleteAppIdentity(ctx context.Context, req *zitimanagementv1.De
 	if zitiID == "" {
 		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
 	}
-
 	identity, err := s.store.ResolveIdentity(ctx, zitiID)
 	if err != nil {
 		return nil, toStatusError(err)

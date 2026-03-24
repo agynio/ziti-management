@@ -125,7 +125,12 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (st
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	created, err := c.identity.CreateIdentity(params, nil)
+	var created *identity.CreateIdentityCreated
+	err := c.withReauth(func() error {
+		var callErr error
+		created, callErr = c.identity.CreateIdentity(params, nil)
+		return callErr
+	})
 	if err != nil {
 		return "", "", fmt.Errorf("create ziti identity: %w", err)
 	}
@@ -164,7 +169,6 @@ func (c *Client) findIdentityByExternalID(ctx context.Context, externalID string
 	}
 	return identityDetail, nil
 }
-
 func (c *Client) CreateService(ctx context.Context, name string, roleAttributes []string) (string, error) {
 	encryptionRequired := true
 	params := service.NewCreateServiceParamsWithContext(ctx)
@@ -174,7 +178,12 @@ func (c *Client) CreateService(ctx context.Context, name string, roleAttributes 
 		EncryptionRequired: &encryptionRequired,
 	}
 
-	created, err := c.service.CreateService(params, nil)
+	var created *service.CreateServiceCreated
+	err := c.withReauth(func() error {
+		var callErr error
+		created, callErr = c.service.CreateService(params, nil)
+		return callErr
+	})
 	if err != nil {
 		return "", fmt.Errorf("create ziti service: %w", err)
 	}
@@ -191,7 +200,10 @@ func (c *Client) CreateService(ctx context.Context, name string, roleAttributes 
 func (c *Client) DeleteService(ctx context.Context, serviceID string) error {
 	params := service.NewDeleteServiceParamsWithContext(ctx)
 	params.ID = serviceID
-	_, err := c.service.DeleteService(params, nil)
+	err := c.withReauth(func() error {
+		_, callErr := c.service.DeleteService(params, nil)
+		return callErr
+	})
 	if err == nil {
 		return nil
 	}
@@ -215,7 +227,12 @@ func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	created, err := c.identity.CreateIdentity(params, nil)
+	var created *identity.CreateIdentityCreated
+	err := c.withReauth(func() error {
+		var callErr error
+		created, callErr = c.identity.CreateIdentity(params, nil)
+		return callErr
+	})
 	if err != nil {
 		return "", nil, fmt.Errorf("create ziti identity: %w", err)
 	}
@@ -250,7 +267,12 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	created, err := c.identity.CreateIdentity(params, nil)
+	var created *identity.CreateIdentityCreated
+	err := c.withReauth(func() error {
+		var callErr error
+		created, callErr = c.identity.CreateIdentity(params, nil)
+		return callErr
+	})
 	if err != nil {
 		return "", nil, "", fmt.Errorf("create ziti identity: %w", err)
 	}
@@ -303,7 +325,12 @@ func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]b
 func (c *Client) fetchEnrollmentJWT(ctx context.Context, zitiIdentityID string) (string, error) {
 	detailParams := identity.NewDetailIdentityParamsWithContext(ctx)
 	detailParams.ID = zitiIdentityID
-	detail, err := c.identity.DetailIdentity(detailParams, nil)
+	var detail *identity.DetailIdentityOK
+	err := c.withReauth(func() error {
+		var callErr error
+		detail, callErr = c.identity.DetailIdentity(detailParams, nil)
+		return callErr
+	})
 	if err != nil {
 		return "", fmt.Errorf("detail ziti identity: %w", err)
 	}
@@ -343,7 +370,10 @@ func (c *Client) CleanupAppResources(ctx context.Context, zitiIdentityID, zitiSe
 func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) error {
 	params := identity.NewDeleteIdentityParamsWithContext(ctx)
 	params.ID = zitiIdentityID
-	_, err := c.identity.DeleteIdentity(params, nil)
+	err := c.withReauth(func() error {
+		_, callErr := c.identity.DeleteIdentity(params, nil)
+		return callErr
+	})
 	if err == nil {
 		return nil
 	}
