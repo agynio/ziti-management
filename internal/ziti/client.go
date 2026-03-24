@@ -25,17 +25,6 @@ import (
 var ErrIdentityNotFound = errors.New("identity not found")
 var ErrServiceNotFound = errors.New("service not found")
 
-type identityService interface {
-	CreateIdentity(params *identity.CreateIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.CreateIdentityCreated, error)
-	DeleteIdentity(params *identity.DeleteIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DeleteIdentityOK, error)
-	DetailIdentity(params *identity.DetailIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DetailIdentityOK, error)
-}
-
-type serviceService interface {
-	CreateService(params *service.CreateServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.CreateServiceCreated, error)
-	DeleteService(params *service.DeleteServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DeleteServiceOK, error)
-}
-
 type Client struct {
 	mu               sync.Mutex
 	identity         identityService
@@ -229,13 +218,7 @@ func (c *Client) CreateService(ctx context.Context, name string, roleAttributes 
 		EncryptionRequired: &encryptionRequired,
 	}
 
-	var created *service.CreateServiceCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		serviceClient := c.serviceClient()
-		created, callErr = serviceClient.CreateService(params, nil)
-		return callErr
-	})
+	created, err := c.client.Service.CreateService(params, nil)
 	if err != nil {
 		return "", fmt.Errorf("create ziti service: %w", err)
 	}
@@ -252,11 +235,7 @@ func (c *Client) CreateService(ctx context.Context, name string, roleAttributes 
 func (c *Client) DeleteService(ctx context.Context, serviceID string) error {
 	params := service.NewDeleteServiceParamsWithContext(ctx)
 	params.ID = serviceID
-	err := c.withReauth(func() error {
-		serviceClient := c.serviceClient()
-		_, callErr := serviceClient.DeleteService(params, nil)
-		return callErr
-	})
+	_, err := c.client.Service.DeleteService(params, nil)
 	if err == nil {
 		return nil
 	}
@@ -309,6 +288,52 @@ func (c *Client) createAndEnrollIdentity(ctx context.Context, params *identity.C
 	return zitiID, identityJSON, nil
 }
 
+func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, string, error) {
+	name := fmt.Sprintf("app-%s", slug)
+	identityType := rest_model.IdentityTypeDevice
+	isAdmin := false
+	roleAttrs := rest_model.Attributes{"apps"}
+	externalID := appID.String()
+	params := identity.NewCreateIdentityParamsWithContext(ctx)
+	params.Identity = &rest_model.IdentityCreate{
+		Name:           &name,
+		Type:           &identityType,
+		IsAdmin:        &isAdmin,
+		RoleAttributes: &roleAttrs,
+		ExternalID:     &externalID,
+		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
+	}
+
+	created, err := c.client.Identity.CreateIdentity(params, nil)
+	if err != nil {
+		return "", nil, "", fmt.Errorf("create ziti identity: %w", err)
+	}
+	if created.Payload == nil || created.Payload.Data == nil {
+		return "", nil, "", errors.New("create ziti identity response missing data")
+	}
+	zitiID := created.Payload.Data.ID
+	if zitiID == "" {
+		return "", nil, "", errors.New("create ziti identity response missing id")
+	}
+
+	serviceID, err := c.CreateService(ctx, name, []string{"app-services"})
+	if err != nil {
+		return "", nil, "", c.cleanupAppResources(ctx, zitiID, "", err)
+	}
+
+	identityJSON, err := c.enrollIdentity(ctx, zitiID)
+	if err != nil {
+		return "", nil, "", c.cleanupAppResources(ctx, zitiID, serviceID, err)
+	}
+	return zitiID, identityJSON, serviceID, nil
+}
+
+func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]byte, error) {
+	jwt, err := c.fetchEnrollmentJWT(ctx, zitiIdentityID)
+	if err != nil {
+		return nil, err
+	}
+
 func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, error) {
 	name := fmt.Sprintf("app-%s-%s", slug, id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
@@ -350,14 +375,6 @@ func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uui
 func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]byte, error) {
 	jwt, err := c.fetchEnrollmentJWT(ctx, zitiIdentityID)
 	if err != nil {
-		return nil, err
-	}
-
-	parseToken := parseEnrollmentToken
-	enrollFn := enrollIdentity
-
-	claims, _, err := parseToken(jwt)
-	if err != nil {
 		return nil, fmt.Errorf("parse enrollment token: %w", err)
 	}
 
@@ -365,7 +382,7 @@ func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]b
 	if err := keyAlg.Set("EC"); err != nil {
 		return nil, fmt.Errorf("set key algorithm: %w", err)
 	}
-	config, err := enrollFn(enroll.EnrollmentFlags{Token: claims, KeyAlg: keyAlg})
+	config, err := enroll.Enroll(enroll.EnrollmentFlags{Token: claims, KeyAlg: keyAlg})
 	if err != nil {
 		return nil, fmt.Errorf("enroll identity: %w", err)
 	}
@@ -405,6 +422,21 @@ func (c *Client) cleanupServiceIdentity(ctx context.Context, zitiIdentityID stri
 		return err
 	}
 	return fmt.Errorf("%w; cleanup failed: %w", err, cleanupErr)
+}
+
+func (c *Client) cleanupAppResources(ctx context.Context, zitiIdentityID, zitiServiceID string, err error) error {
+	identityErr := c.DeleteIdentity(ctx, zitiIdentityID)
+	if identityErr != nil && !errors.Is(identityErr, ErrIdentityNotFound) {
+		err = fmt.Errorf("%w; cleanup identity failed: %w", err, identityErr)
+	}
+	if zitiServiceID == "" {
+		return err
+	}
+	serviceErr := c.DeleteService(ctx, zitiServiceID)
+	if serviceErr != nil && !errors.Is(serviceErr, ErrServiceNotFound) {
+		err = fmt.Errorf("%w; cleanup service failed: %w", err, serviceErr)
+	}
+	return err
 }
 
 func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) error {
