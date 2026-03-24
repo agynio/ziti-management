@@ -20,26 +20,26 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 func (s *Store) InsertManagedIdentity(ctx context.Context, identity ManagedIdentity) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO managed_identities (ziti_identity_id, identity_id, identity_type) VALUES ($1, $2, $3)`,
-		identity.ZitiIdentityID,
-		identity.IdentityID,
-		identity.IdentityType,
-	)
-	if err != nil {
-		return fmt.Errorf("insert managed identity: %w", err)
+	if identity.ZitiServiceID == "" {
+		_, err := s.pool.Exec(ctx, `INSERT INTO managed_identities (ziti_identity_id, identity_id, identity_type) VALUES ($1, $2, $3)`,
+			identity.ZitiIdentityID,
+			identity.IdentityID,
+			identity.IdentityType,
+		)
+		if err != nil {
+			return fmt.Errorf("insert managed identity: %w", err)
+		}
+		return nil
 	}
-	return nil
-}
 
-func (s *Store) InsertManagedIdentityWithService(ctx context.Context, identity ManagedIdentity, zitiServiceID string) error {
 	_, err := s.pool.Exec(ctx, `INSERT INTO managed_identities (ziti_identity_id, identity_id, identity_type, ziti_service_id) VALUES ($1, $2, $3, $4)`,
 		identity.ZitiIdentityID,
 		identity.IdentityID,
 		identity.IdentityType,
-		zitiServiceID,
+		identity.ZitiServiceID,
 	)
 	if err != nil {
-		return fmt.Errorf("insert managed identity with service: %w", err)
+		return fmt.Errorf("insert managed identity: %w", err)
 	}
 	return nil
 }
@@ -64,22 +64,6 @@ func (s *Store) ResolveIdentity(ctx context.Context, zitiIdentityID string) (Man
 			return ManagedIdentity{}, ErrManagedIdentityNotFound
 		}
 		return ManagedIdentity{}, fmt.Errorf("resolve identity: %w", err)
-	}
-	if zitiServiceID != nil {
-		identity.ZitiServiceID = *zitiServiceID
-	}
-	return identity, nil
-}
-
-func (s *Store) GetManagedIdentity(ctx context.Context, zitiIdentityID string) (ManagedIdentity, error) {
-	row := s.pool.QueryRow(ctx, `SELECT ziti_identity_id, identity_id, identity_type, ziti_service_id, created_at FROM managed_identities WHERE ziti_identity_id = $1`, zitiIdentityID)
-	var identity ManagedIdentity
-	var zitiServiceID *string
-	if err := row.Scan(&identity.ZitiIdentityID, &identity.IdentityID, &identity.IdentityType, &zitiServiceID, &identity.CreatedAt); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ManagedIdentity{}, ErrManagedIdentityNotFound
-		}
-		return ManagedIdentity{}, fmt.Errorf("get managed identity: %w", err)
 	}
 	if zitiServiceID != nil {
 		identity.ZitiServiceID = *zitiServiceID

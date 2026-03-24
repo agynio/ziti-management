@@ -62,7 +62,7 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 func (s *Server) CreateAppIdentity(ctx context.Context, req *zitimanagementv1.CreateAppIdentityRequest) (*zitimanagementv1.CreateAppIdentityResponse, error) {
 	appID, err := parseUUID(req.GetIdentityId())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "app_id: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "identity_id: %v", err)
 	}
 
 	slug := strings.TrimSpace(req.GetSlug())
@@ -81,7 +81,7 @@ func (s *Server) CreateAppIdentity(ctx context.Context, req *zitimanagementv1.Cr
 		IdentityType:   store.IdentityTypeApp,
 		ZitiServiceID:  serviceID,
 	}
-	if err := s.store.InsertManagedIdentityWithService(ctx, identity, serviceID); err != nil {
+	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
 		cleanupErr := s.ziti.DeleteIdentity(ctx, zitiID)
 		if cleanupErr != nil && !errors.Is(cleanupErr, ziti.ErrIdentityNotFound) {
 			log.Printf("failed to cleanup ziti identity %s: %v", zitiID, cleanupErr)
@@ -133,13 +133,17 @@ func (s *Server) DeleteAppIdentity(ctx context.Context, req *zitimanagementv1.De
 	}
 
 	if err := s.ziti.DeleteIdentity(ctx, zitiID); err != nil {
-		if !errors.Is(err, ziti.ErrIdentityNotFound) {
-			log.Printf("failed to cleanup ziti identity %s: %v", zitiID, err)
+		if errors.Is(err, ziti.ErrIdentityNotFound) {
+			log.Printf("ziti identity %s already deleted", zitiID)
+		} else {
+			return nil, status.Errorf(codes.Internal, "delete ziti identity: %v", err)
 		}
 	}
 	if err := s.ziti.DeleteService(ctx, zitiServiceID); err != nil {
-		if !errors.Is(err, ziti.ErrServiceNotFound) {
-			log.Printf("failed to cleanup ziti service %s: %v", zitiServiceID, err)
+		if errors.Is(err, ziti.ErrServiceNotFound) {
+			log.Printf("ziti service %s already deleted", zitiServiceID)
+		} else {
+			return nil, status.Errorf(codes.Internal, "delete ziti service: %v", err)
 		}
 	}
 

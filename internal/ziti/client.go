@@ -183,27 +183,9 @@ func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string
 		return "", nil, errors.New("create ziti identity response missing id")
 	}
 
-	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
+	identityJSON, err := c.enrollIdentity(ctx, zitiID)
 	if err != nil {
 		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, err)
-	}
-
-	claims, _, err := enroll.ParseToken(jwt)
-	if err != nil {
-		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, fmt.Errorf("parse enrollment token: %w", err))
-	}
-
-	var keyAlg ziti.KeyAlgVar
-	if err := keyAlg.Set("EC"); err != nil {
-		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, fmt.Errorf("set key algorithm: %w", err))
-	}
-	cfg, err := enroll.Enroll(enroll.EnrollmentFlags{Token: claims, KeyAlg: keyAlg})
-	if err != nil {
-		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, fmt.Errorf("enroll identity: %w", err))
-	}
-	identityJSON, err := json.Marshal(cfg)
-	if err != nil {
-		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, fmt.Errorf("marshal identity json: %w", err))
 	}
 	return zitiID, identityJSON, nil
 }
@@ -241,29 +223,37 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 		return "", nil, "", c.cleanupAppResources(ctx, zitiID, "", err)
 	}
 
-	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
+	identityJSON, err := c.enrollIdentity(ctx, zitiID)
 	if err != nil {
 		return "", nil, "", c.cleanupAppResources(ctx, zitiID, serviceID, err)
+	}
+	return zitiID, identityJSON, serviceID, nil
+}
+
+func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]byte, error) {
+	jwt, err := c.fetchEnrollmentJWT(ctx, zitiIdentityID)
+	if err != nil {
+		return nil, err
 	}
 
 	claims, _, err := enroll.ParseToken(jwt)
 	if err != nil {
-		return "", nil, "", c.cleanupAppResources(ctx, zitiID, serviceID, fmt.Errorf("parse enrollment token: %w", err))
+		return nil, fmt.Errorf("parse enrollment token: %w", err)
 	}
 
 	var keyAlg ziti.KeyAlgVar
 	if err := keyAlg.Set("EC"); err != nil {
-		return "", nil, "", c.cleanupAppResources(ctx, zitiID, serviceID, fmt.Errorf("set key algorithm: %w", err))
+		return nil, fmt.Errorf("set key algorithm: %w", err)
 	}
-	cfg, err := enroll.Enroll(enroll.EnrollmentFlags{Token: claims, KeyAlg: keyAlg})
+	config, err := enroll.Enroll(enroll.EnrollmentFlags{Token: claims, KeyAlg: keyAlg})
 	if err != nil {
-		return "", nil, "", c.cleanupAppResources(ctx, zitiID, serviceID, fmt.Errorf("enroll identity: %w", err))
+		return nil, fmt.Errorf("enroll identity: %w", err)
 	}
-	identityJSON, err := json.Marshal(cfg)
+	identityJSON, err := json.Marshal(config)
 	if err != nil {
-		return "", nil, "", c.cleanupAppResources(ctx, zitiID, serviceID, fmt.Errorf("marshal identity json: %w", err))
+		return nil, fmt.Errorf("marshal identity json: %w", err)
 	}
-	return zitiID, identityJSON, serviceID, nil
+	return identityJSON, nil
 }
 
 func (c *Client) fetchEnrollmentJWT(ctx context.Context, zitiIdentityID string) (string, error) {
