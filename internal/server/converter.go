@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 
+	identityv1 "github.com/agynio/ziti-management/.gen/go/agynio/api/identity/v1"
 	zitimanagementv1 "github.com/agynio/ziti-management/.gen/go/agynio/api/ziti_management/v1"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -21,15 +22,17 @@ func parseUUID(value string) (uuid.UUID, error) {
 	return id, nil
 }
 
-func fromProtoIdentityType(value zitimanagementv1.IdentityType) (store.IdentityType, error) {
+func fromProtoIdentityType(value identityv1.IdentityType) (store.IdentityType, error) {
 	switch value {
-	case zitimanagementv1.IdentityType_IDENTITY_TYPE_AGENT:
+	case identityv1.IdentityType_IDENTITY_TYPE_AGENT:
 		return store.IdentityTypeAgent, nil
-	case zitimanagementv1.IdentityType_IDENTITY_TYPE_RUNNER:
+	case identityv1.IdentityType_IDENTITY_TYPE_RUNNER:
 		return store.IdentityTypeRunner, nil
-	case zitimanagementv1.IdentityType_IDENTITY_TYPE_CHANNEL:
+	case identityv1.IdentityType_IDENTITY_TYPE_CHANNEL:
 		return store.IdentityTypeChannel, nil
-	case zitimanagementv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED:
+	case identityv1.IdentityType_IDENTITY_TYPE_APP:
+		return store.IdentityTypeApp, nil
+	case identityv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED:
 		return store.IdentityTypeUnspecified, fmt.Errorf("identity type unspecified")
 	default:
 		return store.IdentityTypeUnspecified, fmt.Errorf("unknown identity type %v", value)
@@ -51,18 +54,20 @@ func fromProtoServiceType(value zitimanagementv1.ServiceType) (store.ServiceType
 	}
 }
 
-func toProtoIdentityType(value store.IdentityType) (zitimanagementv1.IdentityType, error) {
+func toProtoIdentityType(value store.IdentityType) (identityv1.IdentityType, error) {
 	switch value {
 	case store.IdentityTypeAgent:
-		return zitimanagementv1.IdentityType_IDENTITY_TYPE_AGENT, nil
+		return identityv1.IdentityType_IDENTITY_TYPE_AGENT, nil
 	case store.IdentityTypeRunner:
-		return zitimanagementv1.IdentityType_IDENTITY_TYPE_RUNNER, nil
+		return identityv1.IdentityType_IDENTITY_TYPE_RUNNER, nil
 	case store.IdentityTypeChannel:
-		return zitimanagementv1.IdentityType_IDENTITY_TYPE_CHANNEL, nil
+		return identityv1.IdentityType_IDENTITY_TYPE_CHANNEL, nil
+	case store.IdentityTypeApp:
+		return identityv1.IdentityType_IDENTITY_TYPE_APP, nil
 	case store.IdentityTypeUnspecified:
-		return zitimanagementv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED, nil
+		return identityv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED, nil
 	default:
-		return zitimanagementv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED, fmt.Errorf("unknown identity type %d", value)
+		return identityv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED, fmt.Errorf("unknown identity type %d", value)
 	}
 }
 

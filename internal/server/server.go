@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
+	identityv1 "github.com/agynio/ziti-management/.gen/go/agynio/api/identity/v1"
 	zitimanagementv1 "github.com/agynio/ziti-management/.gen/go/agynio/api/ziti_management/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -57,6 +59,47 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 	}, nil
 }
 
+func (s *Server) CreateAppIdentity(ctx context.Context, req *zitimanagementv1.CreateAppIdentityRequest) (*zitimanagementv1.CreateAppIdentityResponse, error) {
+	appID, err := parseUUID(req.GetAppId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "app_id: %v", err)
+	}
+
+	slug := strings.TrimSpace(req.GetSlug())
+	if slug == "" {
+		return nil, status.Error(codes.InvalidArgument, "slug is required")
+	}
+
+	zitiID, identityJSON, serviceID, err := s.ziti.CreateAndEnrollAppIdentity(ctx, appID, slug)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "create app identity: %v", err)
+	}
+
+	identity := store.ManagedIdentity{
+		ZitiIdentityID: zitiID,
+		IdentityID:     appID,
+		IdentityType:   store.IdentityTypeApp,
+		ZitiServiceID:  serviceID,
+	}
+	if err := s.store.InsertManagedIdentityWithService(ctx, identity, serviceID); err != nil {
+		cleanupErr := s.ziti.DeleteIdentity(ctx, zitiID)
+		if cleanupErr != nil && !errors.Is(cleanupErr, ziti.ErrIdentityNotFound) {
+			log.Printf("failed to cleanup ziti identity %s: %v", zitiID, cleanupErr)
+		}
+		cleanupErr = s.ziti.DeleteService(ctx, serviceID)
+		if cleanupErr != nil && !errors.Is(cleanupErr, ziti.ErrServiceNotFound) {
+			log.Printf("failed to cleanup ziti service %s: %v", serviceID, cleanupErr)
+		}
+		return nil, status.Errorf(codes.Internal, "insert managed identity: %v", err)
+	}
+
+	return &zitimanagementv1.CreateAppIdentityResponse{
+		ZitiIdentityId: zitiID,
+		IdentityJson:   identityJSON,
+		ZitiServiceId:  serviceID,
+	}, nil
+}
+
 func (s *Server) DeleteIdentity(ctx context.Context, req *zitimanagementv1.DeleteIdentityRequest) (*zitimanagementv1.DeleteIdentityResponse, error) {
 	zitiID := req.GetZitiIdentityId()
 	if zitiID == "" {
@@ -73,6 +116,41 @@ func (s *Server) DeleteIdentity(ctx context.Context, req *zitimanagementv1.Delet
 		return nil, status.Errorf(codes.Internal, "delete ziti identity: %v", err)
 	}
 	return &zitimanagementv1.DeleteIdentityResponse{}, nil
+}
+
+func (s *Server) DeleteAppIdentity(ctx context.Context, req *zitimanagementv1.DeleteAppIdentityRequest) (*zitimanagementv1.DeleteAppIdentityResponse, error) {
+	zitiID := req.GetZitiIdentityId()
+	if zitiID == "" {
+		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
+	}
+
+	identity, err := s.store.GetManagedIdentity(ctx, zitiID)
+	if err != nil {
+		return nil, toStatusError(err)
+	}
+	if identity.IdentityType != store.IdentityTypeApp {
+		return nil, status.Errorf(codes.FailedPrecondition, "managed identity %s is not an app identity", zitiID)
+	}
+	if identity.ZitiServiceID == "" {
+		return nil, status.Errorf(codes.Internal, "managed identity %s missing ziti service id", zitiID)
+	}
+
+	if err := s.store.DeleteManagedIdentity(ctx, zitiID); err != nil {
+		return nil, toStatusError(err)
+	}
+
+	if err := s.ziti.DeleteIdentity(ctx, zitiID); err != nil {
+		if !errors.Is(err, ziti.ErrIdentityNotFound) {
+			log.Printf("failed to cleanup ziti identity %s: %v", zitiID, err)
+		}
+	}
+	if err := s.ziti.DeleteService(ctx, identity.ZitiServiceID); err != nil {
+		if !errors.Is(err, ziti.ErrServiceNotFound) {
+			log.Printf("failed to cleanup ziti service %s: %v", identity.ZitiServiceID, err)
+		}
+	}
+
+	return &zitimanagementv1.DeleteAppIdentityResponse{}, nil
 }
 
 func (s *Server) RequestServiceIdentity(ctx context.Context, req *zitimanagementv1.RequestServiceIdentityRequest) (*zitimanagementv1.RequestServiceIdentityResponse, error) {
@@ -121,7 +199,7 @@ func (s *Server) ExtendIdentityLease(ctx context.Context, req *zitimanagementv1.
 
 func (s *Server) ListManagedIdentities(ctx context.Context, req *zitimanagementv1.ListManagedIdentitiesRequest) (*zitimanagementv1.ListManagedIdentitiesResponse, error) {
 	filter := store.ListFilter{}
-	if req.GetIdentityType() != zitimanagementv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED {
+	if req.GetIdentityType() != identityv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED {
 		identityType, err := fromProtoIdentityType(req.GetIdentityType())
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "identity_type: %v", err)
