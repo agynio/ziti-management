@@ -6,13 +6,10 @@ import (
 	identityv1 "github.com/agynio/ziti-management/.gen/go/agynio/api/identity/v1"
 	zitimanagementv1 "github.com/agynio/ziti-management/.gen/go/agynio/api/ziti_management/v1"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/agynio/ziti-management/internal/store"
 )
-
-const managedIdentityZitiServiceIDFieldNumber = 4
 
 func parseUUID(value string) (uuid.UUID, error) {
 	if value == "" {
@@ -81,6 +78,10 @@ func toProtoManagedIdentity(identity store.ManagedIdentity) (*zitimanagementv1.M
 	if err != nil {
 		return nil, err
 	}
+	zitiServiceID := ""
+	if identity.ZitiServiceID != nil {
+		zitiServiceID = *identity.ZitiServiceID
+	}
 	protoIdentity := &zitimanagementv1.ManagedIdentity{
 		ZitiIdentityId: identity.ZitiIdentityID,
 		IdentityId:     identity.IdentityID.String(),
@@ -88,15 +89,5 @@ func toProtoManagedIdentity(identity store.ManagedIdentity) (*zitimanagementv1.M
 		ZitiServiceId:  zitiServiceID,
 		CreatedAt:      timestamppb.New(identity.CreatedAt),
 	}
-	if identity.ZitiServiceID != nil {
-		appendManagedIdentityServiceID(protoIdentity, *identity.ZitiServiceID)
-	}
 	return protoIdentity, nil
-}
-
-func appendManagedIdentityServiceID(identity *zitimanagementv1.ManagedIdentity, zitiServiceID string) {
-	msg := identity.ProtoReflect()
-	field := protowire.AppendTag(nil, managedIdentityZitiServiceIDFieldNumber, protowire.BytesType)
-	field = protowire.AppendString(field, zitiServiceID)
-	msg.SetUnknown(append(msg.GetUnknown(), field...))
 }

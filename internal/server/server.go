@@ -80,8 +80,8 @@ func (s *Server) CreateAppIdentity(ctx context.Context, req *zitimanagementv1.Cr
 		ZitiIdentityID: zitiID,
 		IdentityID:     appID,
 		IdentityType:   store.IdentityTypeApp,
+		ZitiServiceID:  &serviceID,
 	}
-	identity.ZitiServiceID = &serviceID
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
 		cleanupErr := s.ziti.CleanupAppResources(ctx, zitiID, serviceID, err)
 		if cleanupErr != err {
