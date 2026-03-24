@@ -34,7 +34,7 @@ type ManagedIdentity struct {
 	ZitiIdentityID string
 	IdentityID     uuid.UUID
 	IdentityType   IdentityType
-	ZitiServiceID  string
+	ZitiServiceID  *string
 	CreatedAt      time.Time
 }
 

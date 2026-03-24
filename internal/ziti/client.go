@@ -289,7 +289,7 @@ func (c *Client) createAndEnrollIdentity(ctx context.Context, params *identity.C
 }
 
 func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, string, error) {
-	name := fmt.Sprintf("app-%s", slug)
+	name := fmt.Sprintf("app-%s-%s", slug, id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
 	roleAttrs := rest_model.Attributes{"apps"}
@@ -318,12 +318,12 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 
 	serviceID, err := c.CreateService(ctx, name, []string{"app-services"})
 	if err != nil {
-		return "", nil, "", c.cleanupAppResources(ctx, zitiID, "", err)
+		return "", nil, "", c.CleanupAppResources(ctx, zitiID, "", err)
 	}
 
 	identityJSON, err := c.enrollIdentity(ctx, zitiID)
 	if err != nil {
-		return "", nil, "", c.cleanupAppResources(ctx, zitiID, serviceID, err)
+		return "", nil, "", c.CleanupAppResources(ctx, zitiID, serviceID, err)
 	}
 	return zitiID, identityJSON, serviceID, nil
 }
@@ -424,7 +424,7 @@ func (c *Client) cleanupServiceIdentity(ctx context.Context, zitiIdentityID stri
 	return fmt.Errorf("%w; cleanup failed: %w", err, cleanupErr)
 }
 
-func (c *Client) cleanupAppResources(ctx context.Context, zitiIdentityID, zitiServiceID string, err error) error {
+func (c *Client) CleanupAppResources(ctx context.Context, zitiIdentityID, zitiServiceID string, err error) error {
 	identityErr := c.DeleteIdentity(ctx, zitiIdentityID)
 	if identityErr != nil && !errors.Is(identityErr, ErrIdentityNotFound) {
 		err = fmt.Errorf("%w; cleanup identity failed: %w", err, identityErr)
