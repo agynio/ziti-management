@@ -188,6 +188,7 @@ func (s *Server) DeleteRunnerIdentity(ctx context.Context, req *zitimanagementv1
 
 	return &zitimanagementv1.DeleteRunnerIdentityResponse{}, nil
 }
+
 func (s *Server) DeleteIdentity(ctx context.Context, req *zitimanagementv1.DeleteIdentityRequest) (*zitimanagementv1.DeleteIdentityResponse, error) {
 	zitiID := req.GetZitiIdentityId()
 	if zitiID == "" {
@@ -211,7 +212,6 @@ func (s *Server) DeleteAppIdentity(ctx context.Context, req *zitimanagementv1.De
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "identity_id: %v", err)
 	}
-
 	zitiServiceID := strings.TrimSpace(req.GetZitiServiceId())
 	if zitiServiceID == "" {
 		return nil, status.Error(codes.InvalidArgument, "ziti_service_id is required")
@@ -245,7 +245,6 @@ func (s *Server) deleteIdentityAndService(ctx context.Context, identityID uuid.U
 			}
 		}
 	}
-
 	if err := s.ziti.DeleteService(ctx, zitiServiceID); err != nil {
 		if errors.Is(err, ziti.ErrServiceNotFound) {
 			log.Printf("ziti service %s already deleted", zitiServiceID)
