@@ -11,8 +11,8 @@ import (
 	"os"
 
 	"github.com/agynio/ziti-management/internal/id"
+	"github.com/go-openapi/runtime"
 	"github.com/google/uuid"
-	"github.com/openziti/edge-api/rest_management_api_client"
 	"github.com/openziti/edge-api/rest_management_api_client/identity"
 	"github.com/openziti/edge-api/rest_management_api_client/service"
 	"github.com/openziti/edge-api/rest_model"
@@ -24,8 +24,21 @@ import (
 var ErrIdentityNotFound = errors.New("identity not found")
 var ErrServiceNotFound = errors.New("service not found")
 
+type identityService interface {
+	CreateIdentity(params *identity.CreateIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.CreateIdentityCreated, error)
+	DeleteIdentity(params *identity.DeleteIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DeleteIdentityOK, error)
+	DetailIdentity(params *identity.DetailIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DetailIdentityOK, error)
+	ListIdentities(params *identity.ListIdentitiesParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.ListIdentitiesOK, error)
+}
+
+type serviceService interface {
+	CreateService(params *service.CreateServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.CreateServiceCreated, error)
+	DeleteService(params *service.DeleteServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DeleteServiceOK, error)
+}
+
 type Client struct {
-	client *rest_management_api_client.ZitiEdgeManagement
+	identity identityService
+	service  serviceService
 }
 
 func NewClient(controllerURL, certFile, keyFile, caFile string) (*Client, error) {
@@ -41,7 +54,7 @@ func NewClient(controllerURL, certFile, keyFile, caFile string) (*Client, error)
 	if err != nil {
 		return nil, fmt.Errorf("create edge management client: %w", err)
 	}
-	return &Client{client: client}, nil
+	return &Client{identity: client.Identity, service: client.Service}, nil
 }
 
 func loadClientCredentials(certFile, keyFile string) (*x509.Certificate, crypto.PrivateKey, error) {
@@ -84,6 +97,17 @@ func loadCAPool(caFile string) (*x509.CertPool, error) {
 }
 
 func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (string, string, error) {
+	externalID := agentID.String()
+	existingIdentity, err := c.findIdentityByExternalID(ctx, externalID)
+	if err != nil {
+		return "", "", err
+	}
+	if existingIdentity != nil {
+		if err := c.DeleteIdentity(ctx, *existingIdentity.ID); err != nil && !errors.Is(err, ErrIdentityNotFound) {
+			return "", "", fmt.Errorf("delete existing ziti identity: %w", err)
+		}
+	}
+
 	name := fmt.Sprintf("agent-%s-%s", agentID.String(), id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
@@ -91,7 +115,6 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (st
 		"agents",
 		fmt.Sprintf("agent-%s", agentID.String()),
 	}
-	externalID := agentID.String()
 	params := identity.NewCreateIdentityParamsWithContext(ctx)
 	params.Identity = &rest_model.IdentityCreate{
 		Name:           &name,
@@ -102,7 +125,7 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (st
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	created, err := c.client.Identity.CreateIdentity(params, nil)
+	created, err := c.identity.CreateIdentity(params, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("create ziti identity: %w", err)
 	}
@@ -121,6 +144,27 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (st
 	return zitiID, jwt, nil
 }
 
+func (c *Client) findIdentityByExternalID(ctx context.Context, externalID string) (*rest_model.IdentityDetail, error) {
+	filter := fmt.Sprintf("externalId = \"%s\"", externalID)
+	params := identity.NewListIdentitiesParamsWithContext(ctx)
+	params.Filter = &filter
+	listed, err := c.identity.ListIdentities(params, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list ziti identities: %w", err)
+	}
+	if listed.Payload == nil || listed.Payload.Data == nil {
+		return nil, errors.New("list ziti identities response missing data")
+	}
+	if len(listed.Payload.Data) == 0 {
+		return nil, nil
+	}
+	identityDetail := listed.Payload.Data[0]
+	if identityDetail == nil || identityDetail.ID == nil || *identityDetail.ID == "" {
+		return nil, errors.New("list ziti identities response missing id")
+	}
+	return identityDetail, nil
+}
+
 func (c *Client) CreateService(ctx context.Context, name string, roleAttributes []string) (string, error) {
 	encryptionRequired := true
 	params := service.NewCreateServiceParamsWithContext(ctx)
@@ -130,7 +174,7 @@ func (c *Client) CreateService(ctx context.Context, name string, roleAttributes 
 		EncryptionRequired: &encryptionRequired,
 	}
 
-	created, err := c.client.Service.CreateService(params, nil)
+	created, err := c.service.CreateService(params, nil)
 	if err != nil {
 		return "", fmt.Errorf("create ziti service: %w", err)
 	}
@@ -147,7 +191,7 @@ func (c *Client) CreateService(ctx context.Context, name string, roleAttributes 
 func (c *Client) DeleteService(ctx context.Context, serviceID string) error {
 	params := service.NewDeleteServiceParamsWithContext(ctx)
 	params.ID = serviceID
-	_, err := c.client.Service.DeleteService(params, nil)
+	_, err := c.service.DeleteService(params, nil)
 	if err == nil {
 		return nil
 	}
@@ -171,7 +215,7 @@ func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	created, err := c.client.Identity.CreateIdentity(params, nil)
+	created, err := c.identity.CreateIdentity(params, nil)
 	if err != nil {
 		return "", nil, fmt.Errorf("create ziti identity: %w", err)
 	}
@@ -206,7 +250,7 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	created, err := c.client.Identity.CreateIdentity(params, nil)
+	created, err := c.identity.CreateIdentity(params, nil)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("create ziti identity: %w", err)
 	}
@@ -259,7 +303,7 @@ func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]b
 func (c *Client) fetchEnrollmentJWT(ctx context.Context, zitiIdentityID string) (string, error) {
 	detailParams := identity.NewDetailIdentityParamsWithContext(ctx)
 	detailParams.ID = zitiIdentityID
-	detail, err := c.client.Identity.DetailIdentity(detailParams, nil)
+	detail, err := c.identity.DetailIdentity(detailParams, nil)
 	if err != nil {
 		return "", fmt.Errorf("detail ziti identity: %w", err)
 	}
@@ -299,7 +343,7 @@ func (c *Client) CleanupAppResources(ctx context.Context, zitiIdentityID, zitiSe
 func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) error {
 	params := identity.NewDeleteIdentityParamsWithContext(ctx)
 	params.ID = zitiIdentityID
-	_, err := c.client.Identity.DeleteIdentity(params, nil)
+	_, err := c.identity.DeleteIdentity(params, nil)
 	if err == nil {
 		return nil
 	}
