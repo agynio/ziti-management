@@ -47,6 +47,8 @@ func fromProtoServiceType(value zitimanagementv1.ServiceType) (store.ServiceType
 		return store.ServiceTypeOrchestrator, nil
 	case zitimanagementv1.ServiceType_SERVICE_TYPE_RUNNER:
 		return store.ServiceTypeRunner, nil
+	case zitimanagementv1.ServiceType_SERVICE_TYPE_LLM_PROXY:
+		return store.ServiceTypeLLMProxy, nil
 	case zitimanagementv1.ServiceType_SERVICE_TYPE_UNSPECIFIED:
 		return store.ServiceTypeUnspecified, fmt.Errorf("service type unspecified")
 	default:
