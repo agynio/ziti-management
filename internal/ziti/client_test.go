@@ -137,6 +137,47 @@ func TestCreateAgentIdentityIgnoresMissingDelete(t *testing.T) {
 	}
 }
 
+func TestCreateAgentIdentityDeleteFailureStopsCreate(t *testing.T) {
+	ctx := context.Background()
+	agentID := uuid.New()
+	existingID := "stale-id"
+	deleteErr := errors.New("ziti controller unavailable")
+	var createCalled bool
+
+	fake := &fakeIdentityService{
+		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
+			assertFilter(t, params, agentID)
+			return listIdentitiesResponse(existingID), nil
+		},
+		deleteIdentityFunc: func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error) {
+			if params == nil || params.ID != existingID {
+				t.Fatalf("expected delete identity id %q, got %#v", existingID, params)
+			}
+			return nil, deleteErr
+		},
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			createCalled = true
+			return createIdentityResponse("unused"), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			t.Fatalf("detail identity should not be called")
+			return nil, nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	_, _, err := client.CreateAgentIdentity(ctx, agentID)
+	if err == nil {
+		t.Fatalf("expected delete error")
+	}
+	if !errors.Is(err, deleteErr) {
+		t.Fatalf("expected error %q, got %v", deleteErr, err)
+	}
+	if createCalled {
+		t.Fatalf("expected create not called")
+	}
+}
+
 func TestCreateAgentIdentitySkipsDeleteWhenNoExistingIdentity(t *testing.T) {
 	ctx := context.Background()
 	agentID := uuid.New()
