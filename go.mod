@@ -6,6 +6,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/openziti/edge-api v0.27.5
+	github.com/openziti/sdk-golang v1.6.0
 	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
 )
@@ -66,7 +67,6 @@ require (
 	github.com/openziti/foundation/v2 v2.0.90 // indirect
 	github.com/openziti/identity v1.0.128 // indirect
 	github.com/openziti/metrics v1.4.5 // indirect
-	github.com/openziti/sdk-golang v1.5.4 // indirect
 	github.com/openziti/secretstream v0.1.49 // indirect
 	github.com/openziti/transport/v2 v2.0.215 // indirect
 	github.com/orcaman/concurrent-map/v2 v2.0.1 // indirect
