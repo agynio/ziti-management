@@ -25,15 +25,24 @@ import (
 var ErrIdentityNotFound = errors.New("identity not found")
 var ErrServiceNotFound = errors.New("service not found")
 
+type identityService interface {
+	CreateIdentity(params *identity.CreateIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.CreateIdentityCreated, error)
+	DeleteIdentity(params *identity.DeleteIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DeleteIdentityOK, error)
+	DetailIdentity(params *identity.DetailIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DetailIdentityOK, error)
+}
+
+type serviceService interface {
+	CreateService(params *service.CreateServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.CreateServiceCreated, error)
+	DeleteService(params *service.DeleteServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DeleteServiceOK, error)
+}
+
 type Client struct {
-	mu               sync.Mutex
-	identity         identityService
-	service          serviceService
-	controllerURL    string
-	certFile         string
-	keyFile          string
-	caFile           string
-	reauthenticateFn func() error
+	identity      identityService
+	service       serviceService
+	controllerURL string
+	certFile      string
+	keyFile       string
+	caFile        string
 }
 
 func NewClient(controllerURL, certFile, keyFile, caFile string) (*Client, error) {
@@ -102,22 +111,7 @@ type statusCodeChecker interface {
 	IsCode(code int) bool
 }
 
-func (c *Client) identityClient() identityService {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.identity
-}
-
-func (c *Client) serviceClient() serviceService {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.service
-}
-
 func (c *Client) reauthenticate() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	clientCert, privateKey, err := loadClientCredentials(c.certFile, c.keyFile)
 	if err != nil {
 		return err
@@ -140,15 +134,7 @@ func (c *Client) withReauth(operation func() error) error {
 	if err == nil || !isUnauthorized(err) {
 		return err
 	}
-	reauthFn := c.reauthenticate
-	if c.reauthenticateFn != nil {
-		reauthFn = func() error {
-			c.mu.Lock()
-			defer c.mu.Unlock()
-			return c.reauthenticateFn()
-		}
-	}
-	if reauthErr := reauthFn(); reauthErr != nil {
+	if reauthErr := c.reauthenticate(); reauthErr != nil {
 		return fmt.Errorf("reauthenticate ziti client: %w", reauthErr)
 	}
 	return operation()
@@ -187,8 +173,7 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (st
 	var created *identity.CreateIdentityCreated
 	err := c.withReauth(func() error {
 		var callErr error
-		identityClient := c.identityClient()
-		created, callErr = identityClient.CreateIdentity(params, nil)
+		created, callErr = c.identity.CreateIdentity(params, nil)
 		return callErr
 	})
 	if err != nil {
@@ -218,7 +203,12 @@ func (c *Client) CreateService(ctx context.Context, name string, roleAttributes 
 		EncryptionRequired: &encryptionRequired,
 	}
 
-	created, err := c.client.Service.CreateService(params, nil)
+	var created *service.CreateServiceCreated
+	err := c.withReauth(func() error {
+		var callErr error
+		created, callErr = c.service.CreateService(params, nil)
+		return callErr
+	})
 	if err != nil {
 		return "", fmt.Errorf("create ziti service: %w", err)
 	}
@@ -235,7 +225,10 @@ func (c *Client) CreateService(ctx context.Context, name string, roleAttributes 
 func (c *Client) DeleteService(ctx context.Context, serviceID string) error {
 	params := service.NewDeleteServiceParamsWithContext(ctx)
 	params.ID = serviceID
-	_, err := c.client.Service.DeleteService(params, nil)
+	err := c.withReauth(func() error {
+		_, callErr := c.service.DeleteService(params, nil)
+		return callErr
+	})
 	if err == nil {
 		return nil
 	}
@@ -259,15 +252,10 @@ func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	return c.createAndEnrollIdentity(ctx, params)
-}
-
-func (c *Client) createAndEnrollIdentity(ctx context.Context, params *identity.CreateIdentityParams) (string, []byte, error) {
 	var created *identity.CreateIdentityCreated
 	err := c.withReauth(func() error {
 		var callErr error
-		identityClient := c.identityClient()
-		created, callErr = identityClient.CreateIdentity(params, nil)
+		created, callErr = c.identity.CreateIdentity(params, nil)
 		return callErr
 	})
 	if err != nil {
@@ -304,7 +292,12 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	created, err := c.client.Identity.CreateIdentity(params, nil)
+	var created *identity.CreateIdentityCreated
+	err := c.withReauth(func() error {
+		var callErr error
+		created, callErr = c.identity.CreateIdentity(params, nil)
+		return callErr
+	})
 	if err != nil {
 		return "", nil, "", fmt.Errorf("create ziti identity: %w", err)
 	}
@@ -399,8 +392,7 @@ func (c *Client) fetchEnrollmentJWT(ctx context.Context, zitiIdentityID string) 
 	var detail *identity.DetailIdentityOK
 	err := c.withReauth(func() error {
 		var callErr error
-		identityClient := c.identityClient()
-		detail, callErr = identityClient.DetailIdentity(detailParams, nil)
+		detail, callErr = c.identity.DetailIdentity(detailParams, nil)
 		return callErr
 	})
 	if err != nil {
@@ -443,8 +435,7 @@ func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) erro
 	params := identity.NewDeleteIdentityParamsWithContext(ctx)
 	params.ID = zitiIdentityID
 	err := c.withReauth(func() error {
-		identityClient := c.identityClient()
-		_, callErr := identityClient.DeleteIdentity(params, nil)
+		_, callErr := c.identity.DeleteIdentity(params, nil)
 		return callErr
 	})
 	if err == nil {

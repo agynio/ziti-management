@@ -28,7 +28,7 @@ func TestFromProtoServiceType(t *testing.T) {
 		},
 		{
 			name:  "runner",
-			input: zitimanagementv1.ServiceType(store.ServiceTypeRunner),
+			input: zitimanagementv1.ServiceType_SERVICE_TYPE_RUNNER,
 			want:  store.ServiceTypeRunner,
 		},
 		{
