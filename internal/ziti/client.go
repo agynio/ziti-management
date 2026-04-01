@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/agynio/ziti-management/internal/id"
 	"github.com/go-openapi/runtime"
@@ -148,7 +147,7 @@ func isUnauthorized(err error) bool {
 	if errors.As(err, &checker) && checker.IsCode(401) {
 		return true
 	}
-	return strings.Contains(err.Error(), "[401]")
+	return false
 }
 
 func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (string, string, error) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/agynio/ziti-management/internal/store"
+	"github.com/google/uuid"
 )
 
 func TestServiceIdentityConfig(t *testing.T) {
@@ -65,6 +66,65 @@ func TestServiceIdentityConfig(t *testing.T) {
 			}
 			if !reflect.DeepEqual(roles, tc.wantRoles) {
 				t.Fatalf("expected roles %v, got %v", tc.wantRoles, roles)
+			}
+		})
+	}
+}
+
+func TestParseManagedIdentityID(t *testing.T) {
+	identityID := uuid.New()
+	tests := []struct {
+		name  string
+		value string
+		want  uuid.UUID
+		ok    bool
+	}{
+		{
+			name:  "uuid",
+			value: identityID.String(),
+			want:  identityID,
+			ok:    true,
+		},
+		{
+			name:  "agent prefix",
+			value: "agent-" + identityID.String(),
+			want:  identityID,
+			ok:    true,
+		},
+		{
+			name:  "agent prefix invalid",
+			value: "agent-not-a-uuid",
+			ok:    false,
+		},
+		{
+			name:  "invalid",
+			value: "not-a-uuid",
+			ok:    false,
+		},
+		{
+			name:  "short agent prefix",
+			value: "agent-1234",
+			ok:    false,
+		},
+		{
+			name:  "empty",
+			value: "",
+			ok:    false,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := parseManagedIdentityID(tc.value)
+			if ok != tc.ok {
+				t.Fatalf("expected ok=%v, got %v", tc.ok, ok)
+			}
+			if !tc.ok {
+				return
+			}
+			if got != tc.want {
+				t.Fatalf("expected id %v, got %v", tc.want, got)
 			}
 		})
 	}
