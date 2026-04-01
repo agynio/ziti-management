@@ -266,9 +266,6 @@ func (s *Server) resolveManagedIdentity(ctx context.Context, zitiID string) (sto
 }
 
 func parseManagedIdentityID(value string) (uuid.UUID, bool) {
-	if identityID, err := uuid.Parse(value); err == nil {
-		return identityID, true
-	}
 	const agentPrefix = "agent-"
 	const uuidLength = 36
 	if strings.HasPrefix(value, agentPrefix) && len(value) >= len(agentPrefix)+uuidLength {
