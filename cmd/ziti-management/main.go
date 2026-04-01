@@ -37,6 +37,10 @@ func run() error {
 		return err
 	}
 
+	if err := ziti.EnsureEnrollment(cfg.ZitiCertFile, cfg.ZitiKeyFile, cfg.ZitiCAFile, cfg.ZitiEnrollmentJWTFile); err != nil {
+		return fmt.Errorf("ensure ziti enrollment: %w", err)
+	}
+
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("parse database url: %w", err)
