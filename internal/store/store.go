@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -51,6 +52,18 @@ func (s *Store) ResolveIdentity(ctx context.Context, zitiIdentityID string) (Man
 			return ManagedIdentity{}, ErrManagedIdentityNotFound
 		}
 		return ManagedIdentity{}, fmt.Errorf("resolve identity: %w", err)
+	}
+	return identity, nil
+}
+
+func (s *Store) ResolveIdentityByIdentityID(ctx context.Context, identityID uuid.UUID) (ManagedIdentity, error) {
+	row := s.pool.QueryRow(ctx, `SELECT ziti_identity_id, identity_type, ziti_service_id, created_at FROM managed_identities WHERE identity_id = $1`, identityID)
+	identity := ManagedIdentity{IdentityID: identityID}
+	if err := row.Scan(&identity.ZitiIdentityID, &identity.IdentityType, &identity.ZitiServiceID, &identity.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ManagedIdentity{}, ErrManagedIdentityNotFound
+		}
+		return ManagedIdentity{}, fmt.Errorf("resolve identity by identity id: %w", err)
 	}
 	return identity, nil
 }
