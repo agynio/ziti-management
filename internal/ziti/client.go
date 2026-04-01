@@ -343,6 +343,7 @@ func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uui
 		ExternalID:     &externalID,
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
+
 	return c.createAndEnrollIdentity(ctx, params)
 }
 
@@ -405,6 +406,7 @@ func (c *Client) cleanupServiceIdentity(ctx context.Context, zitiIdentityID stri
 	}
 	return fmt.Errorf("%w; cleanup failed: %w", err, cleanupErr)
 }
+
 func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) error {
 	params := identity.NewDeleteIdentityParamsWithContext(ctx)
 	params.ID = zitiIdentityID

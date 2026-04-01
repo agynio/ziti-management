@@ -369,6 +369,9 @@ func (s *Server) resolveManagedIdentity(ctx context.Context, zitiID string) (sto
 }
 
 func parseManagedIdentityID(value string) (uuid.UUID, bool) {
+	if identityID, err := uuid.Parse(value); err == nil {
+		return identityID, true
+	}
 	const agentPrefix = "agent-"
 	const uuidLength = 36
 	// Legacy lookup: agent identity names embed the platform UUID.
@@ -400,6 +403,8 @@ func serviceIdentityConfig(serviceType store.ServiceType) (string, []string, err
 		return fmt.Sprintf("svc-gateway-%s", suffix), []string{"gateway-hosts"}, nil
 	case store.ServiceTypeOrchestrator:
 		return fmt.Sprintf("svc-orchestrator-%s", suffix), []string{"orchestrators"}, nil
+	case store.ServiceTypeRunner:
+		return fmt.Sprintf("svc-runner-%s", suffix), []string{"runners"}, nil
 	case store.ServiceTypeLLMProxy:
 		return fmt.Sprintf("svc-llm-proxy-%s", suffix), []string{"llm-proxy-hosts"}, nil
 	case store.ServiceTypeUnspecified:
