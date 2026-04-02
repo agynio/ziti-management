@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/agynio/ziti-management/internal/id"
 	"github.com/go-openapi/runtime"
@@ -36,6 +37,7 @@ type serviceService interface {
 }
 
 type Client struct {
+	mu            sync.Mutex
 	identity      identityService
 	service       serviceService
 	controllerURL string
@@ -110,7 +112,21 @@ type statusCodeChecker interface {
 	IsCode(code int) bool
 }
 
+func (c *Client) identityClient() identityService {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.identity
+}
+
+func (c *Client) serviceClient() serviceService {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.service
+}
+
 func (c *Client) reauthenticate() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	clientCert, privateKey, err := loadClientCredentials(c.certFile, c.keyFile)
 	if err != nil {
 		return err
@@ -172,7 +188,8 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (st
 	var created *identity.CreateIdentityCreated
 	err := c.withReauth(func() error {
 		var callErr error
-		created, callErr = c.identity.CreateIdentity(params, nil)
+		identityClient := c.identityClient()
+		created, callErr = identityClient.CreateIdentity(params, nil)
 		return callErr
 	})
 	if err != nil {
@@ -205,7 +222,8 @@ func (c *Client) CreateService(ctx context.Context, name string, roleAttributes 
 	var created *service.CreateServiceCreated
 	err := c.withReauth(func() error {
 		var callErr error
-		created, callErr = c.service.CreateService(params, nil)
+		serviceClient := c.serviceClient()
+		created, callErr = serviceClient.CreateService(params, nil)
 		return callErr
 	})
 	if err != nil {
@@ -225,7 +243,8 @@ func (c *Client) DeleteService(ctx context.Context, serviceID string) error {
 	params := service.NewDeleteServiceParamsWithContext(ctx)
 	params.ID = serviceID
 	err := c.withReauth(func() error {
-		_, callErr := c.service.DeleteService(params, nil)
+		serviceClient := c.serviceClient()
+		_, callErr := serviceClient.DeleteService(params, nil)
 		return callErr
 	})
 	if err == nil {
@@ -254,7 +273,8 @@ func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string
 	var created *identity.CreateIdentityCreated
 	err := c.withReauth(func() error {
 		var callErr error
-		created, callErr = c.identity.CreateIdentity(params, nil)
+		identityClient := c.identityClient()
+		created, callErr = identityClient.CreateIdentity(params, nil)
 		return callErr
 	})
 	if err != nil {
@@ -294,7 +314,8 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 	var created *identity.CreateIdentityCreated
 	err := c.withReauth(func() error {
 		var callErr error
-		created, callErr = c.identity.CreateIdentity(params, nil)
+		identityClient := c.identityClient()
+		created, callErr = identityClient.CreateIdentity(params, nil)
 		return callErr
 	})
 	if err != nil {
@@ -339,7 +360,8 @@ func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uui
 	var created *identity.CreateIdentityCreated
 	err := c.withReauth(func() error {
 		var callErr error
-		created, callErr = c.identity.CreateIdentity(params, nil)
+		identityClient := c.identityClient()
+		created, callErr = identityClient.CreateIdentity(params, nil)
 		return callErr
 	})
 	if err != nil {
@@ -398,7 +420,8 @@ func (c *Client) fetchEnrollmentJWT(ctx context.Context, zitiIdentityID string) 
 	var detail *identity.DetailIdentityOK
 	err := c.withReauth(func() error {
 		var callErr error
-		detail, callErr = c.identity.DetailIdentity(detailParams, nil)
+		identityClient := c.identityClient()
+		detail, callErr = identityClient.DetailIdentity(detailParams, nil)
 		return callErr
 	})
 	if err != nil {
@@ -441,7 +464,8 @@ func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) erro
 	params := identity.NewDeleteIdentityParamsWithContext(ctx)
 	params.ID = zitiIdentityID
 	err := c.withReauth(func() error {
-		_, callErr := c.identity.DeleteIdentity(params, nil)
+		identityClient := c.identityClient()
+		_, callErr := identityClient.DeleteIdentity(params, nil)
 		return callErr
 	})
 	if err == nil {
