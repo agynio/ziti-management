@@ -27,11 +27,6 @@ func TestFromProtoServiceType(t *testing.T) {
 			want:  store.ServiceTypeOrchestrator,
 		},
 		{
-			name:  "runner",
-			input: zitimanagementv1.ServiceType_SERVICE_TYPE_RUNNER,
-			want:  store.ServiceTypeRunner,
-		},
-		{
 			name:  "llm proxy",
 			input: zitimanagementv1.ServiceType_SERVICE_TYPE_LLM_PROXY,
 			want:  store.ServiceTypeLLMProxy,

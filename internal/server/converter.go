@@ -28,8 +28,6 @@ func fromProtoIdentityType(value identityv1.IdentityType) (store.IdentityType, e
 		return store.IdentityTypeAgent, nil
 	case identityv1.IdentityType_IDENTITY_TYPE_RUNNER:
 		return store.IdentityTypeRunner, nil
-	case identityv1.IdentityType_IDENTITY_TYPE_CHANNEL:
-		return store.IdentityTypeChannel, nil
 	case identityv1.IdentityType_IDENTITY_TYPE_APP:
 		return store.IdentityTypeApp, nil
 	case identityv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED:
@@ -45,8 +43,6 @@ func fromProtoServiceType(value zitimanagementv1.ServiceType) (store.ServiceType
 		return store.ServiceTypeGateway, nil
 	case zitimanagementv1.ServiceType_SERVICE_TYPE_ORCHESTRATOR:
 		return store.ServiceTypeOrchestrator, nil
-	case zitimanagementv1.ServiceType_SERVICE_TYPE_RUNNER:
-		return store.ServiceTypeRunner, nil
 	case zitimanagementv1.ServiceType_SERVICE_TYPE_LLM_PROXY:
 		return store.ServiceTypeLLMProxy, nil
 	case zitimanagementv1.ServiceType_SERVICE_TYPE_UNSPECIFIED:
