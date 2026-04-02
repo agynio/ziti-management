@@ -3,7 +3,6 @@ package ziti
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/go-openapi/runtime"
@@ -13,17 +12,9 @@ import (
 )
 
 type fakeIdentityService struct {
-	listIdentitiesFunc func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error)
 	createIdentityFunc func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error)
 	deleteIdentityFunc func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error)
 	detailIdentityFunc func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error)
-}
-
-func (f *fakeIdentityService) ListIdentities(params *identity.ListIdentitiesParams, _ runtime.ClientAuthInfoWriter, _ ...identity.ClientOption) (*identity.ListIdentitiesOK, error) {
-	if f.listIdentitiesFunc == nil {
-		return nil, errors.New("list identities not stubbed")
-	}
-	return f.listIdentitiesFunc(params)
 }
 
 func (f *fakeIdentityService) CreateIdentity(params *identity.CreateIdentityParams, _ runtime.ClientAuthInfoWriter, _ ...identity.ClientOption) (*identity.CreateIdentityCreated, error) {
@@ -47,30 +38,18 @@ func (f *fakeIdentityService) DetailIdentity(params *identity.DetailIdentityPara
 	return f.detailIdentityFunc(params)
 }
 
-func TestCreateAgentIdentityDeletesExistingIdentity(t *testing.T) {
+func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 	ctx := context.Background()
 	agentID := uuid.New()
-	existingID := "existing-id"
 	createdID := "created-id"
 	jwt := "jwt-token"
-	var deleteCalled bool
 
 	fake := &fakeIdentityService{
-		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
-			assertFilter(t, params, agentID)
-			return listIdentitiesResponse(existingID), nil
-		},
 		deleteIdentityFunc: func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error) {
-			deleteCalled = true
-			if params == nil || params.ID != existingID {
-				t.Fatalf("expected delete identity id %q, got %#v", existingID, params)
-			}
-			return &identity.DeleteIdentityOK{}, nil
+			t.Fatalf("delete identity should not be called: %#v", params)
+			return nil, nil
 		},
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			if !deleteCalled {
-				t.Fatalf("expected delete before create")
-			}
 			assertCreateExternalID(t, params, agentID)
 			return createIdentityResponse(createdID), nil
 		},
@@ -95,132 +74,33 @@ func TestCreateAgentIdentityDeletesExistingIdentity(t *testing.T) {
 	}
 }
 
-func TestCreateAgentIdentityIgnoresMissingDelete(t *testing.T) {
+func TestCreateAgentIdentityCreateFailure(t *testing.T) {
 	ctx := context.Background()
 	agentID := uuid.New()
-	existingID := "missing-id"
-	createdID := "created-id"
-	jwt := "jwt-token"
-	var deleteCalled bool
+	createErr := errors.New("create failed")
+	var detailCalled bool
 
 	fake := &fakeIdentityService{
-		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
-			assertFilter(t, params, agentID)
-			return listIdentitiesResponse(existingID), nil
-		},
-		deleteIdentityFunc: func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error) {
-			deleteCalled = true
-			return nil, &identity.DeleteIdentityNotFound{}
-		},
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			if !deleteCalled {
-				t.Fatalf("expected delete before create")
-			}
 			assertCreateExternalID(t, params, agentID)
-			return createIdentityResponse(createdID), nil
+			return nil, createErr
 		},
 		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			return detailIdentityResponse(jwt), nil
-		},
-	}
-
-	client := &Client{identity: fake}
-	zitiID, token, err := client.CreateAgentIdentity(ctx, agentID)
-	if err != nil {
-		t.Fatalf("create agent identity: %v", err)
-	}
-	if zitiID != createdID {
-		t.Fatalf("expected identity id %q, got %q", createdID, zitiID)
-	}
-	if token != jwt {
-		t.Fatalf("expected jwt %q, got %q", jwt, token)
-	}
-}
-
-func TestCreateAgentIdentityDeleteFailureStopsCreate(t *testing.T) {
-	ctx := context.Background()
-	agentID := uuid.New()
-	existingID := "stale-id"
-	deleteErr := errors.New("ziti controller unavailable")
-	var createCalled bool
-
-	fake := &fakeIdentityService{
-		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
-			assertFilter(t, params, agentID)
-			return listIdentitiesResponse(existingID), nil
-		},
-		deleteIdentityFunc: func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error) {
-			if params == nil || params.ID != existingID {
-				t.Fatalf("expected delete identity id %q, got %#v", existingID, params)
-			}
-			return nil, deleteErr
-		},
-		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			createCalled = true
-			return createIdentityResponse("unused"), nil
-		},
-		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			t.Fatalf("detail identity should not be called")
-			return nil, nil
+			detailCalled = true
+			return nil, errors.New("detail identity should not be called")
 		},
 	}
 
 	client := &Client{identity: fake}
 	_, _, err := client.CreateAgentIdentity(ctx, agentID)
 	if err == nil {
-		t.Fatalf("expected delete error")
+		t.Fatalf("expected create error")
 	}
-	if !errors.Is(err, deleteErr) {
-		t.Fatalf("expected error %q, got %v", deleteErr, err)
+	if !errors.Is(err, createErr) {
+		t.Fatalf("expected error %q, got %v", createErr, err)
 	}
-	if createCalled {
-		t.Fatalf("expected create not called")
-	}
-}
-
-func TestCreateAgentIdentitySkipsDeleteWhenNoExistingIdentity(t *testing.T) {
-	ctx := context.Background()
-	agentID := uuid.New()
-	createdID := "created-id"
-	jwt := "jwt-token"
-	var deleteCalls int
-
-	fake := &fakeIdentityService{
-		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
-			assertFilter(t, params, agentID)
-			return listIdentitiesResponse(""), nil
-		},
-		deleteIdentityFunc: func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error) {
-			deleteCalls++
-			return &identity.DeleteIdentityOK{}, nil
-		},
-		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			assertCreateExternalID(t, params, agentID)
-			return createIdentityResponse(createdID), nil
-		},
-		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			return detailIdentityResponse(jwt), nil
-		},
-	}
-
-	client := &Client{identity: fake}
-	_, _, err := client.CreateAgentIdentity(ctx, agentID)
-	if err != nil {
-		t.Fatalf("create agent identity: %v", err)
-	}
-	if deleteCalls != 0 {
-		t.Fatalf("expected delete not called, got %d", deleteCalls)
-	}
-}
-
-func assertFilter(t *testing.T, params *identity.ListIdentitiesParams, agentID uuid.UUID) {
-	t.Helper()
-	if params == nil || params.Filter == nil {
-		t.Fatalf("expected filter param set")
-	}
-	expected := fmt.Sprintf("externalId = \"%s\"", agentID.String())
-	if *params.Filter != expected {
-		t.Fatalf("expected filter %q, got %q", expected, *params.Filter)
+	if detailCalled {
+		t.Fatalf("expected detail not called")
 	}
 }
 
@@ -232,15 +112,6 @@ func assertCreateExternalID(t *testing.T, params *identity.CreateIdentityParams,
 	if *params.Identity.ExternalID != agentID.String() {
 		t.Fatalf("expected external id %q, got %q", agentID.String(), *params.Identity.ExternalID)
 	}
-}
-
-func listIdentitiesResponse(identityID string) *identity.ListIdentitiesOK {
-	if identityID == "" {
-		return &identity.ListIdentitiesOK{Payload: &rest_model.ListIdentitiesEnvelope{Data: rest_model.IdentityList{}}}
-	}
-	return &identity.ListIdentitiesOK{Payload: &rest_model.ListIdentitiesEnvelope{Data: rest_model.IdentityList{
-		&rest_model.IdentityDetail{BaseEntity: rest_model.BaseEntity{ID: &identityID}},
-	}}}
 }
 
 func createIdentityResponse(identityID string) *identity.CreateIdentityCreated {
