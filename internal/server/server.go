@@ -161,7 +161,7 @@ func (s *Server) DeleteRunnerIdentity(ctx context.Context, req *zitimanagementv1
 		}
 	}
 
-	zitiServiceID := req.GetZitiServiceId()
+	zitiServiceID := *identity.ZitiServiceID
 	if err := s.ziti.DeleteService(ctx, zitiServiceID); err != nil {
 		if errors.Is(err, ziti.ErrServiceNotFound) {
 			log.Printf("ziti service %s already deleted", zitiServiceID)
