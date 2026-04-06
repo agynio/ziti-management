@@ -25,6 +25,7 @@ const (
 	ServiceTypeUnspecified  ServiceType = 0
 	ServiceTypeGateway      ServiceType = 1
 	ServiceTypeOrchestrator ServiceType = 2
+	ServiceTypeRunner       ServiceType = 3
 	ServiceTypeLLMProxy     ServiceType = 4
 )
 

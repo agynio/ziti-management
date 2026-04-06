@@ -361,6 +361,30 @@ func (s *Server) ResolveIdentity(ctx context.Context, req *zitimanagementv1.Reso
 	}, nil
 }
 
+func (s *Server) cleanupManagedIdentity(ctx context.Context, identityID uuid.UUID) (*string, error) {
+	identity, err := s.store.ResolveIdentityByIdentityID(ctx, identityID)
+	if err != nil {
+		if errors.Is(err, store.ErrManagedIdentityNotFound) {
+			return nil, nil
+		}
+		return nil, toStatusError(err)
+	}
+
+	if err := s.ziti.DeleteIdentity(ctx, identity.ZitiIdentityID); err != nil {
+		if errors.Is(err, ziti.ErrIdentityNotFound) {
+			log.Printf("ziti identity %s already deleted", identity.ZitiIdentityID)
+		} else {
+			return nil, status.Errorf(codes.Internal, "delete ziti identity: %v", err)
+		}
+	}
+
+	if err := s.store.DeleteManagedIdentity(ctx, identity.ZitiIdentityID); err != nil {
+		return nil, toStatusError(err)
+	}
+
+	return identity.ZitiServiceID, nil
+}
+
 func (s *Server) resolveManagedIdentity(ctx context.Context, zitiID string) (store.ManagedIdentity, error) {
 	if identityID, ok := parseManagedIdentityID(zitiID); ok {
 		return s.store.ResolveIdentityByIdentityID(ctx, identityID)

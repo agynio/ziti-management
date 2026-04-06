@@ -82,7 +82,8 @@ func TestParseManagedIdentityID(t *testing.T) {
 		{
 			name:  "uuid",
 			value: identityID.String(),
-			ok:    false,
+			want:  identityID,
+			ok:    true,
 		},
 		{
 			name:  "agent prefix with suffix",
