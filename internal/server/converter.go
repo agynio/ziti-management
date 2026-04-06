@@ -43,6 +43,8 @@ func fromProtoServiceType(value zitimanagementv1.ServiceType) (store.ServiceType
 		return store.ServiceTypeGateway, nil
 	case zitimanagementv1.ServiceType_SERVICE_TYPE_ORCHESTRATOR:
 		return store.ServiceTypeOrchestrator, nil
+	case zitimanagementv1.ServiceType(store.ServiceTypeRunner):
+		return store.ServiceTypeRunner, nil
 	case zitimanagementv1.ServiceType_SERVICE_TYPE_LLM_PROXY:
 		return store.ServiceTypeLLMProxy, nil
 	case zitimanagementv1.ServiceType_SERVICE_TYPE_UNSPECIFIED:

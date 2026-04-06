@@ -70,30 +70,42 @@ func (s *Server) CreateAppIdentity(ctx context.Context, req *zitimanagementv1.Cr
 	if slug == "" {
 		return nil, status.Error(codes.InvalidArgument, "slug is required")
 	}
-
-	zitiID, identityJSON, serviceID, err := s.ziti.CreateAndEnrollAppIdentity(ctx, appID, slug)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "create app identity: %v", err)
-	}
-
-	identity := store.ManagedIdentity{
-		ZitiIdentityID: zitiID,
-		IdentityID:     appID,
-		IdentityType:   store.IdentityTypeApp,
-		ZitiServiceID:  &serviceID,
-	}
-	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
-		cleanupErr := s.ziti.CleanupAppResources(ctx, zitiID, serviceID, err)
-		if cleanupErr != err {
-			log.Printf("failed to cleanup app resources for %s: %v", zitiID, cleanupErr)
+	zitiID, identityJSON, err := s.createManagedIdentity(ctx, appID, store.IdentityTypeApp, func() (string, []byte, error) {
+		createdID, createdJSON, createErr := s.ziti.CreateAndEnrollAppIdentity(ctx, appID, slug)
+		if createErr != nil {
+			return "", nil, status.Errorf(codes.Internal, "create app identity: %v", createErr)
 		}
-		return nil, status.Errorf(codes.Internal, "insert managed identity: %v", err)
+		return createdID, createdJSON, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return &zitimanagementv1.CreateAppIdentityResponse{
 		ZitiIdentityId: zitiID,
 		IdentityJson:   identityJSON,
-		ZitiServiceId:  serviceID,
+	}, nil
+}
+
+func (s *Server) CreateService(ctx context.Context, req *zitimanagementv1.CreateServiceRequest) (*zitimanagementv1.CreateServiceResponse, error) {
+	name := strings.TrimSpace(req.GetName())
+	if name == "" {
+		return nil, status.Error(codes.InvalidArgument, "name is required")
+	}
+
+	roleAttributes := req.GetRoleAttributes()
+	if len(roleAttributes) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "role_attributes is required")
+	}
+
+	serviceID, err := s.ziti.CreateService(ctx, name, roleAttributes)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "create ziti service: %v", err)
+	}
+
+	return &zitimanagementv1.CreateServiceResponse{
+		ZitiServiceId:   serviceID,
+		ZitiServiceName: name,
 	}, nil
 }
 
@@ -108,66 +120,69 @@ func (s *Server) CreateRunnerIdentity(ctx context.Context, req *zitimanagementv1
 		return nil, status.Error(codes.InvalidArgument, "role_attributes is required")
 	}
 
-	zitiID, identityJSON, serviceName, serviceID, err := s.ziti.CreateAndEnrollRunnerIdentity(ctx, runnerID, roleAttributes)
+	zitiID, identityJSON, err := s.createManagedIdentity(ctx, runnerID, store.IdentityTypeRunner, func() (string, []byte, error) {
+		createdID, createdJSON, createErr := s.ziti.CreateAndEnrollRunnerIdentity(ctx, runnerID, roleAttributes)
+		if createErr != nil {
+			return "", nil, status.Errorf(codes.Internal, "create runner identity: %v", createErr)
+		}
+		return createdID, createdJSON, nil
+	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "create runner identity: %v", err)
+		return nil, err
+	}
+
+	return &zitimanagementv1.CreateRunnerIdentityResponse{
+		ZitiIdentityId: zitiID,
+		IdentityJson:   identityJSON,
+	}, nil
+}
+
+func (s *Server) createManagedIdentity(
+	ctx context.Context,
+	identityID uuid.UUID,
+	identityType store.IdentityType,
+	createFn func() (string, []byte, error),
+) (string, []byte, error) {
+	serviceID, err := s.cleanupManagedIdentity(ctx, identityID)
+	if err != nil {
+		return "", nil, err
+	}
+
+	zitiID, identityJSON, err := createFn()
+	if err != nil {
+		return "", nil, err
 	}
 
 	identity := store.ManagedIdentity{
 		ZitiIdentityID: zitiID,
-		IdentityID:     runnerID,
-		IdentityType:   store.IdentityTypeRunner,
-		ZitiServiceID:  &serviceID,
+		IdentityID:     identityID,
+		IdentityType:   identityType,
+		ZitiServiceID:  serviceID,
 	}
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
-		cleanupErr := s.ziti.CleanupAppResources(ctx, zitiID, serviceID, err)
-		if cleanupErr != err {
-			log.Printf("failed to cleanup runner resources for %s: %v", zitiID, cleanupErr)
+		cleanupErr := s.ziti.DeleteIdentity(ctx, zitiID)
+		if cleanupErr != nil && !errors.Is(cleanupErr, ziti.ErrIdentityNotFound) {
+			log.Printf("failed to cleanup ziti identity %s: %v", zitiID, cleanupErr)
 		}
-		return nil, status.Errorf(codes.Internal, "insert managed identity: %v", err)
+		return "", nil, status.Errorf(codes.Internal, "insert managed identity: %v", err)
 	}
 
-	return &zitimanagementv1.CreateRunnerIdentityResponse{
-		ZitiIdentityId:  zitiID,
-		IdentityJson:    identityJSON,
-		ZitiServiceId:   serviceID,
-		ZitiServiceName: serviceName,
-	}, nil
+	return zitiID, identityJSON, nil
 }
 
 func (s *Server) DeleteRunnerIdentity(ctx context.Context, req *zitimanagementv1.DeleteRunnerIdentityRequest) (*zitimanagementv1.DeleteRunnerIdentityResponse, error) {
-	zitiID := req.GetZitiIdentityId()
-	if zitiID == "" {
-		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
-	}
-
-	identity, err := s.store.ResolveIdentity(ctx, zitiID)
+	identityID, err := parseUUID(req.GetIdentityId())
 	if err != nil {
-		return nil, toStatusError(err)
-	}
-	if identity.ZitiServiceID == nil {
-		return nil, status.Errorf(codes.Internal, "managed identity %s missing ziti service id", zitiID)
+		return nil, status.Errorf(codes.InvalidArgument, "identity_id: %v", err)
 	}
 
-	if err := s.store.DeleteManagedIdentity(ctx, zitiID); err != nil {
-		return nil, toStatusError(err)
+	zitiServiceID := strings.TrimSpace(req.GetZitiServiceId())
+	if zitiServiceID == "" {
+		return nil, status.Error(codes.InvalidArgument, "ziti_service_id is required")
 	}
 
-	if err := s.ziti.DeleteIdentity(ctx, zitiID); err != nil {
-		if errors.Is(err, ziti.ErrIdentityNotFound) {
-			log.Printf("ziti identity %s already deleted", zitiID)
-		} else {
-			return nil, status.Errorf(codes.Internal, "delete ziti identity: %v", err)
-		}
-	}
-
-	zitiServiceID := *identity.ZitiServiceID
-	if err := s.ziti.DeleteService(ctx, zitiServiceID); err != nil {
-		if errors.Is(err, ziti.ErrServiceNotFound) {
-			log.Printf("ziti service %s already deleted", zitiServiceID)
-		} else {
-			return nil, status.Errorf(codes.Internal, "delete ziti service: %v", err)
-		}
+	if err := s.deleteIdentityAndService(ctx, identityID, zitiServiceID); err != nil {
+		return nil, err
 	}
 
 	return &zitimanagementv1.DeleteRunnerIdentityResponse{}, nil
@@ -192,39 +207,52 @@ func (s *Server) DeleteIdentity(ctx context.Context, req *zitimanagementv1.Delet
 }
 
 func (s *Server) DeleteAppIdentity(ctx context.Context, req *zitimanagementv1.DeleteAppIdentityRequest) (*zitimanagementv1.DeleteAppIdentityResponse, error) {
-	zitiID := req.GetZitiIdentityId()
-	if zitiID == "" {
-		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
-	}
-	identity, err := s.store.ResolveIdentity(ctx, zitiID)
+	identityID, err := parseUUID(req.GetIdentityId())
 	if err != nil {
-		return nil, toStatusError(err)
+		return nil, status.Errorf(codes.InvalidArgument, "identity_id: %v", err)
 	}
-	if identity.ZitiServiceID == nil {
-		return nil, status.Errorf(codes.Internal, "managed identity %s missing ziti service id", zitiID)
-	}
-
-	if err := s.store.DeleteManagedIdentity(ctx, zitiID); err != nil {
-		return nil, toStatusError(err)
+	zitiServiceID := strings.TrimSpace(req.GetZitiServiceId())
+	if zitiServiceID == "" {
+		return nil, status.Error(codes.InvalidArgument, "ziti_service_id is required")
 	}
 
-	if err := s.ziti.DeleteIdentity(ctx, zitiID); err != nil {
-		if errors.Is(err, ziti.ErrIdentityNotFound) {
-			log.Printf("ziti identity %s already deleted", zitiID)
+	if err := s.deleteIdentityAndService(ctx, identityID, zitiServiceID); err != nil {
+		return nil, err
+	}
+
+	return &zitimanagementv1.DeleteAppIdentityResponse{}, nil
+}
+
+func (s *Server) deleteIdentityAndService(ctx context.Context, identityID uuid.UUID, zitiServiceID string) error {
+	identity, err := s.store.ResolveIdentityByIdentityID(ctx, identityID)
+	if err != nil {
+		if errors.Is(err, store.ErrManagedIdentityNotFound) {
+			log.Printf("managed identity for identity_id %s not found; skipping identity cleanup", identityID.String())
 		} else {
-			return nil, status.Errorf(codes.Internal, "delete ziti identity: %v", err)
+			return toStatusError(err)
+		}
+	} else {
+		if err := s.store.DeleteManagedIdentity(ctx, identity.ZitiIdentityID); err != nil {
+			return toStatusError(err)
+		}
+
+		if err := s.ziti.DeleteIdentity(ctx, identity.ZitiIdentityID); err != nil {
+			if errors.Is(err, ziti.ErrIdentityNotFound) {
+				log.Printf("ziti identity %s already deleted", identity.ZitiIdentityID)
+			} else {
+				return status.Errorf(codes.Internal, "delete ziti identity: %v", err)
+			}
 		}
 	}
-	zitiServiceID := *identity.ZitiServiceID
 	if err := s.ziti.DeleteService(ctx, zitiServiceID); err != nil {
 		if errors.Is(err, ziti.ErrServiceNotFound) {
 			log.Printf("ziti service %s already deleted", zitiServiceID)
 		} else {
-			return nil, status.Errorf(codes.Internal, "delete ziti service: %v", err)
+			return status.Errorf(codes.Internal, "delete ziti service: %v", err)
 		}
 	}
 
-	return &zitimanagementv1.DeleteAppIdentityResponse{}, nil
+	return nil
 }
 
 func (s *Server) RequestServiceIdentity(ctx context.Context, req *zitimanagementv1.RequestServiceIdentityRequest) (*zitimanagementv1.RequestServiceIdentityResponse, error) {
@@ -333,6 +361,30 @@ func (s *Server) ResolveIdentity(ctx context.Context, req *zitimanagementv1.Reso
 	}, nil
 }
 
+func (s *Server) cleanupManagedIdentity(ctx context.Context, identityID uuid.UUID) (*string, error) {
+	identity, err := s.store.ResolveIdentityByIdentityID(ctx, identityID)
+	if err != nil {
+		if errors.Is(err, store.ErrManagedIdentityNotFound) {
+			return nil, nil
+		}
+		return nil, toStatusError(err)
+	}
+
+	if err := s.ziti.DeleteIdentity(ctx, identity.ZitiIdentityID); err != nil {
+		if errors.Is(err, ziti.ErrIdentityNotFound) {
+			log.Printf("ziti identity %s already deleted", identity.ZitiIdentityID)
+		} else {
+			return nil, status.Errorf(codes.Internal, "delete ziti identity: %v", err)
+		}
+	}
+
+	if err := s.store.DeleteManagedIdentity(ctx, identity.ZitiIdentityID); err != nil {
+		return nil, toStatusError(err)
+	}
+
+	return identity.ZitiServiceID, nil
+}
+
 func (s *Server) resolveManagedIdentity(ctx context.Context, zitiID string) (store.ManagedIdentity, error) {
 	if identityID, ok := parseManagedIdentityID(zitiID); ok {
 		return s.store.ResolveIdentityByIdentityID(ctx, identityID)
@@ -341,8 +393,13 @@ func (s *Server) resolveManagedIdentity(ctx context.Context, zitiID string) (sto
 }
 
 func parseManagedIdentityID(value string) (uuid.UUID, bool) {
+	if identityID, err := uuid.Parse(value); err == nil {
+		return identityID, true
+	}
 	const agentPrefix = "agent-"
 	const uuidLength = 36
+	// Legacy lookup: agent identity names embed the platform UUID.
+	// Keep this heuristic until the API exposes an explicit identity_id.
 	if strings.HasPrefix(value, agentPrefix) && len(value) >= len(agentPrefix)+uuidLength {
 		candidate := value[len(agentPrefix) : len(agentPrefix)+uuidLength]
 		if identityID, err := uuid.Parse(candidate); err == nil {
@@ -370,6 +427,8 @@ func serviceIdentityConfig(serviceType store.ServiceType) (string, []string, err
 		return fmt.Sprintf("svc-gateway-%s", suffix), []string{"gateway-hosts"}, nil
 	case store.ServiceTypeOrchestrator:
 		return fmt.Sprintf("svc-orchestrator-%s", suffix), []string{"orchestrators"}, nil
+	case store.ServiceTypeRunner:
+		return fmt.Sprintf("svc-runner-%s", suffix), []string{"runners"}, nil
 	case store.ServiceTypeLLMProxy:
 		return fmt.Sprintf("svc-llm-proxy-%s", suffix), []string{"llm-proxy-hosts"}, nil
 	case store.ServiceTypeUnspecified:
