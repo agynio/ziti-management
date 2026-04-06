@@ -244,7 +244,6 @@ func (s *Server) deleteIdentityAndService(ctx context.Context, identityID uuid.U
 			}
 		}
 	}
-
 	if err := s.ziti.DeleteService(ctx, zitiServiceID); err != nil {
 		if errors.Is(err, ziti.ErrServiceNotFound) {
 			log.Printf("ziti service %s already deleted", zitiServiceID)
