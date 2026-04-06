@@ -347,52 +347,6 @@ func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uui
 	return c.createAndEnrollIdentity(ctx, params)
 }
 
-func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uuid.UUID, roleAttributes []string) (string, []byte, string, string, error) {
-	name := fmt.Sprintf("runner-%s-%s", runnerID.String(), id.ShortUUID())
-	identityType := rest_model.IdentityTypeDevice
-	isAdmin := false
-	roleAttrs := rest_model.Attributes(roleAttributes)
-	externalID := runnerID.String()
-	params := identity.NewCreateIdentityParamsWithContext(ctx)
-	params.Identity = &rest_model.IdentityCreate{
-		Name:           &name,
-		Type:           &identityType,
-		IsAdmin:        &isAdmin,
-		RoleAttributes: &roleAttrs,
-		ExternalID:     &externalID,
-		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
-	}
-
-	var created *identity.CreateIdentityCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		created, callErr = c.identity.CreateIdentity(params, nil)
-		return callErr
-	})
-	if err != nil {
-		return "", nil, "", "", fmt.Errorf("create ziti identity: %w", err)
-	}
-	if created.Payload == nil || created.Payload.Data == nil {
-		return "", nil, "", "", errors.New("create ziti identity response missing data")
-	}
-	zitiID := created.Payload.Data.ID
-	if zitiID == "" {
-		return "", nil, "", "", errors.New("create ziti identity response missing id")
-	}
-
-	serviceName := fmt.Sprintf("runner-%s", runnerID.String())
-	serviceID, err := c.CreateService(ctx, serviceName, []string{"runner-services"})
-	if err != nil {
-		return "", nil, "", "", c.CleanupAppResources(ctx, zitiID, "", err)
-	}
-
-	identityJSON, err := c.enrollIdentity(ctx, zitiID)
-	if err != nil {
-		return "", nil, "", "", c.CleanupAppResources(ctx, zitiID, serviceID, err)
-	}
-	return zitiID, identityJSON, serviceName, serviceID, nil
-}
-
 func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]byte, error) {
 	jwt, err := c.fetchEnrollmentJWT(ctx, zitiIdentityID)
 	if err != nil {
