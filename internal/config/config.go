@@ -16,7 +16,6 @@ type Config struct {
 	ZitiEnrollmentJWTFile     string
 	ServiceIdentityLeaseTTL   time.Duration
 	ServiceIdentityGCInterval time.Duration
-	ServiceIdentityGCGracePeriod time.Duration
 }
 
 func FromEnv() (Config, error) {
@@ -46,21 +45,16 @@ func FromEnv() (Config, error) {
 		return Config{}, fmt.Errorf("ZITI_CA_FILE must be set")
 	}
 	cfg.ZitiEnrollmentJWTFile = os.Getenv("ZITI_ENROLLMENT_JWT_FILE")
-	leaseTTL, err := durationFromEnv("SERVICE_IDENTITY_LEASE_TTL", 10*time.Minute)
+	leaseTTL, err := durationFromEnv("SERVICE_IDENTITY_LEASE_TTL", 5*time.Minute)
 	if err != nil {
 		return Config{}, err
 	}
-	gcInterval, err := durationFromEnv("SERVICE_IDENTITY_GC_INTERVAL", 2*time.Minute)
-	if err != nil {
-		return Config{}, err
-	}
-	gcGracePeriod, err := durationFromEnvAllowZero("SERVICE_IDENTITY_GC_GRACE_PERIOD", 10*time.Minute)
+	gcInterval, err := durationFromEnv("SERVICE_IDENTITY_GC_INTERVAL", time.Minute)
 	if err != nil {
 		return Config{}, err
 	}
 	cfg.ServiceIdentityLeaseTTL = leaseTTL
 	cfg.ServiceIdentityGCInterval = gcInterval
-	cfg.ServiceIdentityGCGracePeriod = gcGracePeriod
 	return cfg, nil
 }
 
@@ -75,21 +69,6 @@ func durationFromEnv(key string, defaultValue time.Duration) (time.Duration, err
 	}
 	if parsed <= 0 {
 		return 0, fmt.Errorf("%s must be greater than 0", key)
-	}
-	return parsed, nil
-}
-
-func durationFromEnvAllowZero(key string, defaultValue time.Duration) (time.Duration, error) {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue, nil
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("%s must be a valid duration: %w", key, err)
-	}
-	if parsed < 0 {
-		return 0, fmt.Errorf("%s must be greater than or equal to 0", key)
 	}
 	return parsed, nil
 }
