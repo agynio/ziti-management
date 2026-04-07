@@ -10,12 +10,12 @@ import (
 	"github.com/agynio/ziti-management/internal/ziti"
 )
 
-func RunServiceIdentityGC(ctx context.Context, storeClient *store.Store, zitiClient *ziti.Client, interval time.Duration) {
+func RunServiceIdentityGC(ctx context.Context, storeClient *store.Store, zitiClient *ziti.Client, interval time.Duration, gracePeriod time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
-		if err := sweepServiceIdentities(ctx, storeClient, zitiClient); err != nil {
+		if err := sweepServiceIdentities(ctx, storeClient, zitiClient, gracePeriod); err != nil {
 			log.Printf("service identity GC sweep failed: %v", err)
 		}
 		select {
@@ -26,8 +26,8 @@ func RunServiceIdentityGC(ctx context.Context, storeClient *store.Store, zitiCli
 	}
 }
 
-func sweepServiceIdentities(ctx context.Context, storeClient *store.Store, zitiClient *ziti.Client) error {
-	identities, err := storeClient.ListExpiredServiceIdentities(ctx)
+func sweepServiceIdentities(ctx context.Context, storeClient *store.Store, zitiClient *ziti.Client, gracePeriod time.Duration) error {
+	identities, err := storeClient.ListExpiredServiceIdentities(ctx, gracePeriod)
 	if err != nil {
 		return err
 	}
