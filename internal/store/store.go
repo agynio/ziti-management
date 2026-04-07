@@ -9,14 +9,20 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool dbPool
 }
 
-func NewStore(pool *pgxpool.Pool) *Store {
+type dbPool interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func NewStore(pool dbPool) *Store {
 	return &Store{pool: pool}
 }
 
@@ -142,8 +148,8 @@ func (s *Store) ExtendServiceIdentityLease(ctx context.Context, zitiIdentityID s
 	return nil
 }
 
-func (s *Store) ListExpiredServiceIdentities(ctx context.Context) ([]ServiceIdentity, error) {
-	rows, err := s.pool.Query(ctx, `SELECT ziti_identity_id, service_type, lease_expires_at, created_at FROM service_identities WHERE lease_expires_at < NOW() ORDER BY lease_expires_at ASC`)
+func (s *Store) ListExpiredServiceIdentities(ctx context.Context, gracePeriod time.Duration) ([]ServiceIdentity, error) {
+	rows, err := s.pool.Query(ctx, `SELECT ziti_identity_id, service_type, lease_expires_at, created_at FROM service_identities WHERE lease_expires_at < NOW() - $1::interval ORDER BY lease_expires_at ASC`, gracePeriod)
 	if err != nil {
 		return nil, fmt.Errorf("list expired service identities: %w", err)
 	}
