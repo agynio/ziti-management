@@ -74,7 +74,7 @@ func run() error {
 		grpcServer.GracefulStop()
 	}()
 
-	go gc.RunServiceIdentityGC(ctx, storeClient, zitiClient, cfg.ServiceIdentityGCInterval, cfg.ServiceIdentityGCGracePeriod)
+	go gc.RunServiceIdentityGC(ctx, storeClient, zitiClient, cfg.ServiceIdentityGCInterval)
 
 	log.Printf("ZitiManagementService listening on %s", cfg.GRPCAddress)
 
