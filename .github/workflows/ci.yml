@@ -25,6 +25,8 @@ jobs:
 
       - name: Set up Buf
         uses: bufbuild/buf-setup-action@v1
+        with:
+          version: '1.67.0'
 
       - name: Generate gRPC stubs
         run: |
