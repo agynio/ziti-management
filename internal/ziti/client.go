@@ -28,6 +28,12 @@ var ErrIdentityNotFound = errors.New("identity not found")
 var ErrServiceNotFound = errors.New("service not found")
 var ErrServicePolicyNotFound = errors.New("service policy not found")
 
+const (
+	roleAttributeAgents  = "agents"
+	roleAttributeApps    = "apps"
+	roleAttributeDevices = "devices"
+)
+
 type identityService interface {
 	CreateIdentity(params *identity.CreateIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.CreateIdentityCreated, error)
 	DeleteIdentity(params *identity.DeleteIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DeleteIdentityOK, error)
@@ -170,17 +176,55 @@ func isUnauthorized(err error) bool {
 	return false
 }
 
+func extractCreateID(resource string, payload *rest_model.CreateEnvelope) (string, error) {
+	if payload == nil || payload.Data == nil {
+		return "", fmt.Errorf("create ziti %s response missing data", resource)
+	}
+	resourceID := payload.Data.ID
+	if resourceID == "" {
+		return "", fmt.Errorf("create ziti %s response missing id", resource)
+	}
+	return resourceID, nil
+}
+
+func (c *Client) createWithReauth(resource string, operation func() (*rest_model.CreateEnvelope, error)) (string, error) {
+	var payload *rest_model.CreateEnvelope
+	err := c.withReauth(func() error {
+		var callErr error
+		payload, callErr = operation()
+		return callErr
+	})
+	if err != nil {
+		return "", fmt.Errorf("create ziti %s: %w", resource, err)
+	}
+	return extractCreateID(resource, payload)
+}
+
+func (c *Client) createIdentity(ctx context.Context, identityCreate *rest_model.IdentityCreate) (string, error) {
+	params := identity.NewCreateIdentityParamsWithContext(ctx)
+	params.Identity = identityCreate
+	return c.createWithReauth("identity", func() (*rest_model.CreateEnvelope, error) {
+		created, err := c.identity.CreateIdentity(params, nil)
+		if err != nil {
+			return nil, err
+		}
+		if created == nil {
+			return nil, nil
+		}
+		return created.Payload, nil
+	})
+}
+
 func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (string, string, error) {
 	name := fmt.Sprintf("agent-%s-%s", agentID.String(), id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
 	roleAttrs := rest_model.Attributes{
-		"agents",
+		roleAttributeAgents,
 		fmt.Sprintf("agent-%s", agentID.String()),
 	}
 	externalID := agentID.String()
-	params := identity.NewCreateIdentityParamsWithContext(ctx)
-	params.Identity = &rest_model.IdentityCreate{
+	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
 		Type:           &identityType,
 		IsAdmin:        &isAdmin,
@@ -189,21 +233,9 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (st
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	var created *identity.CreateIdentityCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		created, callErr = c.identity.CreateIdentity(params, nil)
-		return callErr
-	})
+	zitiID, err := c.createIdentity(ctx, identityCreate)
 	if err != nil {
-		return "", "", fmt.Errorf("create ziti identity: %w", err)
-	}
-	if created.Payload == nil || created.Payload.Data == nil {
-		return "", "", errors.New("create ziti identity response missing data")
-	}
-	zitiID := created.Payload.Data.ID
-	if zitiID == "" {
-		return "", "", errors.New("create ziti identity response missing id")
+		return "", "", err
 	}
 
 	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
@@ -216,10 +248,9 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (st
 func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error) {
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
-	roleAttrs := rest_model.Attributes{"devices"}
+	roleAttrs := rest_model.Attributes{roleAttributeDevices}
 	externalID := userIdentityID.String()
-	params := identity.NewCreateIdentityParamsWithContext(ctx)
-	params.Identity = &rest_model.IdentityCreate{
+	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
 		Type:           &identityType,
 		IsAdmin:        &isAdmin,
@@ -228,21 +259,9 @@ func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.U
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	var created *identity.CreateIdentityCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		created, callErr = c.identity.CreateIdentity(params, nil)
-		return callErr
-	})
+	zitiID, err := c.createIdentity(ctx, identityCreate)
 	if err != nil {
-		return "", "", fmt.Errorf("create ziti identity: %w", err)
-	}
-	if created.Payload == nil || created.Payload.Data == nil {
-		return "", "", errors.New("create ziti identity response missing data")
-	}
-	zitiID := created.Payload.Data.ID
-	if zitiID == "" {
-		return "", "", errors.New("create ziti identity response missing id")
+		return "", "", err
 	}
 
 	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
@@ -311,23 +330,16 @@ func (c *Client) createService(ctx context.Context, name string, roleAttributes 
 		Configs:            configIDs,
 	}
 
-	var created *service.CreateServiceCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		created, callErr = c.service.CreateService(params, nil)
-		return callErr
+	return c.createWithReauth("service", func() (*rest_model.CreateEnvelope, error) {
+		created, err := c.service.CreateService(params, nil)
+		if err != nil {
+			return nil, err
+		}
+		if created == nil {
+			return nil, nil
+		}
+		return created.Payload, nil
 	})
-	if err != nil {
-		return "", fmt.Errorf("create ziti service: %w", err)
-	}
-	if created.Payload == nil || created.Payload.Data == nil {
-		return "", errors.New("create ziti service response missing data")
-	}
-	serviceID := created.Payload.Data.ID
-	if serviceID == "" {
-		return "", errors.New("create ziti service response missing id")
-	}
-	return serviceID, nil
 }
 
 func (c *Client) createConfig(ctx context.Context, configTypeID, name string, data map[string]any) (string, error) {
@@ -338,23 +350,16 @@ func (c *Client) createConfig(ctx context.Context, configTypeID, name string, da
 		Data:         data,
 	}
 
-	var created *config.CreateConfigCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		created, callErr = c.config.CreateConfig(params, nil)
-		return callErr
+	return c.createWithReauth("config", func() (*rest_model.CreateEnvelope, error) {
+		created, err := c.config.CreateConfig(params, nil)
+		if err != nil {
+			return nil, err
+		}
+		if created == nil {
+			return nil, nil
+		}
+		return created.Payload, nil
 	})
-	if err != nil {
-		return "", fmt.Errorf("create ziti config: %w", err)
-	}
-	if created.Payload == nil || created.Payload.Data == nil {
-		return "", errors.New("create ziti config response missing data")
-	}
-	configID := created.Payload.Data.ID
-	if configID == "" {
-		return "", errors.New("create ziti config response missing id")
-	}
-	return configID, nil
 }
 
 func (c *Client) cleanupConfigs(ctx context.Context, configIDs []string, err error) error {
@@ -419,23 +424,16 @@ func (c *Client) CreateServicePolicy(ctx context.Context, name, policyType strin
 		ServiceRoles:  rest_model.Roles(serviceRoles),
 	}
 
-	var created *service_policy.CreateServicePolicyCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		created, callErr = c.servicePolicy.CreateServicePolicy(params, nil)
-		return callErr
+	return c.createWithReauth("service policy", func() (*rest_model.CreateEnvelope, error) {
+		created, err := c.servicePolicy.CreateServicePolicy(params, nil)
+		if err != nil {
+			return nil, err
+		}
+		if created == nil {
+			return nil, nil
+		}
+		return created.Payload, nil
 	})
-	if err != nil {
-		return "", fmt.Errorf("create ziti service policy: %w", err)
-	}
-	if created.Payload == nil || created.Payload.Data == nil {
-		return "", errors.New("create ziti service policy response missing data")
-	}
-	policyID := created.Payload.Data.ID
-	if policyID == "" {
-		return "", errors.New("create ziti service policy response missing id")
-	}
-	return policyID, nil
 }
 
 func (c *Client) DeleteServicePolicy(ctx context.Context, policyID string) error {
@@ -459,8 +457,7 @@ func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
 	attrs := rest_model.Attributes(roleAttributes)
-	params := identity.NewCreateIdentityParamsWithContext(ctx)
-	params.Identity = &rest_model.IdentityCreate{
+	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
 		Type:           &identityType,
 		IsAdmin:        &isAdmin,
@@ -468,21 +465,9 @@ func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	var created *identity.CreateIdentityCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		created, callErr = c.identity.CreateIdentity(params, nil)
-		return callErr
-	})
+	zitiID, err := c.createIdentity(ctx, identityCreate)
 	if err != nil {
-		return "", nil, fmt.Errorf("create ziti identity: %w", err)
-	}
-	if created.Payload == nil || created.Payload.Data == nil {
-		return "", nil, errors.New("create ziti identity response missing data")
-	}
-	zitiID := created.Payload.Data.ID
-	if zitiID == "" {
-		return "", nil, errors.New("create ziti identity response missing id")
+		return "", nil, err
 	}
 
 	identityJSON, err := c.enrollIdentity(ctx, zitiID)
@@ -496,10 +481,9 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 	name := fmt.Sprintf("app-%s-%s", slug, id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
-	roleAttrs := rest_model.Attributes{"apps"}
+	roleAttrs := rest_model.Attributes{roleAttributeApps}
 	externalID := appID.String()
-	params := identity.NewCreateIdentityParamsWithContext(ctx)
-	params.Identity = &rest_model.IdentityCreate{
+	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
 		Type:           &identityType,
 		IsAdmin:        &isAdmin,
@@ -508,21 +492,9 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	var created *identity.CreateIdentityCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		created, callErr = c.identity.CreateIdentity(params, nil)
-		return callErr
-	})
+	zitiID, err := c.createIdentity(ctx, identityCreate)
 	if err != nil {
-		return "", nil, fmt.Errorf("create ziti identity: %w", err)
-	}
-	if created.Payload == nil || created.Payload.Data == nil {
-		return "", nil, errors.New("create ziti identity response missing data")
-	}
-	zitiID := created.Payload.Data.ID
-	if zitiID == "" {
-		return "", nil, errors.New("create ziti identity response missing id")
+		return "", nil, err
 	}
 
 	identityJSON, err := c.enrollIdentity(ctx, zitiID)
@@ -538,8 +510,7 @@ func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uui
 	isAdmin := false
 	roleAttrs := rest_model.Attributes(roleAttributes)
 	externalID := runnerID.String()
-	params := identity.NewCreateIdentityParamsWithContext(ctx)
-	params.Identity = &rest_model.IdentityCreate{
+	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
 		Type:           &identityType,
 		IsAdmin:        &isAdmin,
@@ -548,21 +519,9 @@ func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uui
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	var created *identity.CreateIdentityCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		created, callErr = c.identity.CreateIdentity(params, nil)
-		return callErr
-	})
+	zitiID, err := c.createIdentity(ctx, identityCreate)
 	if err != nil {
-		return "", nil, fmt.Errorf("create ziti identity: %w", err)
-	}
-	if created.Payload == nil || created.Payload.Data == nil {
-		return "", nil, errors.New("create ziti identity response missing data")
-	}
-	zitiID := created.Payload.Data.ID
-	if zitiID == "" {
-		return "", nil, errors.New("create ziti identity response missing id")
+		return "", nil, err
 	}
 
 	identityJSON, err := c.enrollIdentity(ctx, zitiID)

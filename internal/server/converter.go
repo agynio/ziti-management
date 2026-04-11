@@ -13,6 +13,8 @@ import (
 	"github.com/agynio/ziti-management/internal/ziti"
 )
 
+const maxPort int32 = 65535
+
 func parseUUID(value string) (uuid.UUID, error) {
 	if value == "" {
 		return uuid.UUID{}, fmt.Errorf("value is empty")
@@ -80,8 +82,8 @@ func fromProtoHostV1Config(value *zitimanagementv1.HostV1Config) (*ziti.HostV1Co
 		return nil, fmt.Errorf("address is required")
 	}
 	port := value.GetPort()
-	if port <= 0 {
-		return nil, fmt.Errorf("port must be positive")
+	if port <= 0 || port > maxPort {
+		return nil, fmt.Errorf("port must be between 1 and %d", maxPort)
 	}
 	return &ziti.HostV1ConfigData{
 		Protocol: protocol,
@@ -128,8 +130,8 @@ func fromProtoInterceptV1Config(value *zitimanagementv1.InterceptV1Config) (*zit
 	for i, portRange := range portRanges {
 		low := portRange.GetLow()
 		high := portRange.GetHigh()
-		if low <= 0 || high <= 0 {
-			return nil, fmt.Errorf("port_ranges[%d] must be positive", i)
+		if low <= 0 || high <= 0 || low > maxPort || high > maxPort {
+			return nil, fmt.Errorf("port_ranges[%d] must be between 1 and %d", i, maxPort)
 		}
 		if high < low {
 			return nil, fmt.Errorf("port_ranges[%d] high must be >= low", i)
