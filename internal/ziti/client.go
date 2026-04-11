@@ -56,14 +56,16 @@ type servicePolicyService interface {
 }
 
 type Client struct {
-	identity      identityService
-	service       serviceService
-	config        configService
-	servicePolicy servicePolicyService
-	controllerURL string
-	certFile      string
-	keyFile       string
-	caFile        string
+	mu               sync.Mutex
+	identity         identityService
+	service          serviceService
+	config           configService
+	servicePolicy    servicePolicyService
+	controllerURL    string
+	certFile         string
+	keyFile          string
+	caFile           string
+	reauthenticateFn func() error
 }
 
 func NewClient(controllerURL, certFile, keyFile, caFile string) (*Client, error) {
@@ -134,7 +136,34 @@ type statusCodeChecker interface {
 	IsCode(code int) bool
 }
 
+func (c *Client) identityClient() identityService {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.identity
+}
+
+func (c *Client) serviceClient() serviceService {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.service
+}
+
+func (c *Client) configClient() configService {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.config
+}
+
+func (c *Client) servicePolicyClient() servicePolicyService {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.servicePolicy
+}
+
 func (c *Client) reauthenticate() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	clientCert, privateKey, err := loadClientCredentials(c.certFile, c.keyFile)
 	if err != nil {
 		return err
@@ -159,7 +188,15 @@ func (c *Client) withReauth(operation func() error) error {
 	if err == nil || !isUnauthorized(err) {
 		return err
 	}
-	if reauthErr := c.reauthenticate(); reauthErr != nil {
+	reauthFn := c.reauthenticate
+	if c.reauthenticateFn != nil {
+		reauthFn = func() error {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			return c.reauthenticateFn()
+		}
+	}
+	if reauthErr := reauthFn(); reauthErr != nil {
 		return fmt.Errorf("reauthenticate ziti client: %w", reauthErr)
 	}
 	return operation()
@@ -204,7 +241,8 @@ func (c *Client) createIdentity(ctx context.Context, identityCreate *rest_model.
 	params := identity.NewCreateIdentityParamsWithContext(ctx)
 	params.Identity = identityCreate
 	return c.createWithReauth("identity", func() (*rest_model.CreateEnvelope, error) {
-		created, err := c.identity.CreateIdentity(params, nil)
+		identityClient := c.identityClient()
+		created, err := identityClient.CreateIdentity(params, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -331,7 +369,8 @@ func (c *Client) createService(ctx context.Context, name string, roleAttributes 
 	}
 
 	return c.createWithReauth("service", func() (*rest_model.CreateEnvelope, error) {
-		created, err := c.service.CreateService(params, nil)
+		serviceClient := c.serviceClient()
+		created, err := serviceClient.CreateService(params, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -351,7 +390,8 @@ func (c *Client) createConfig(ctx context.Context, configTypeID, name string, da
 	}
 
 	return c.createWithReauth("config", func() (*rest_model.CreateEnvelope, error) {
-		created, err := c.config.CreateConfig(params, nil)
+		configClient := c.configClient()
+		created, err := configClient.CreateConfig(params, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -382,7 +422,8 @@ func (c *Client) deleteConfig(ctx context.Context, configID string) error {
 	params := config.NewDeleteConfigParamsWithContext(ctx)
 	params.ID = configID
 	err := c.withReauth(func() error {
-		_, callErr := c.config.DeleteConfig(params, nil)
+		configClient := c.configClient()
+		_, callErr := configClient.DeleteConfig(params, nil)
 		return callErr
 	})
 	if err == nil {
@@ -399,7 +440,8 @@ func (c *Client) DeleteService(ctx context.Context, serviceID string) error {
 	params := service.NewDeleteServiceParamsWithContext(ctx)
 	params.ID = serviceID
 	err := c.withReauth(func() error {
-		_, callErr := c.service.DeleteService(params, nil)
+		serviceClient := c.serviceClient()
+		_, callErr := serviceClient.DeleteService(params, nil)
 		return callErr
 	})
 	if err == nil {
@@ -425,7 +467,8 @@ func (c *Client) CreateServicePolicy(ctx context.Context, name, policyType strin
 	}
 
 	return c.createWithReauth("service policy", func() (*rest_model.CreateEnvelope, error) {
-		created, err := c.servicePolicy.CreateServicePolicy(params, nil)
+		servicePolicyClient := c.servicePolicyClient()
+		created, err := servicePolicyClient.CreateServicePolicy(params, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -440,7 +483,8 @@ func (c *Client) DeleteServicePolicy(ctx context.Context, policyID string) error
 	params := service_policy.NewDeleteServicePolicyParamsWithContext(ctx)
 	params.ID = policyID
 	err := c.withReauth(func() error {
-		_, callErr := c.servicePolicy.DeleteServicePolicy(params, nil)
+		servicePolicyClient := c.servicePolicyClient()
+		_, callErr := servicePolicyClient.DeleteServicePolicy(params, nil)
 		return callErr
 	})
 	if err == nil {
@@ -465,6 +509,10 @@ func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
+	return c.createAndEnrollIdentity(ctx, identityCreate)
+}
+
+func (c *Client) createAndEnrollIdentity(ctx context.Context, identityCreate *rest_model.IdentityCreate) (string, []byte, error) {
 	zitiID, err := c.createIdentity(ctx, identityCreate)
 	if err != nil {
 		return "", nil, err
@@ -492,16 +540,7 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	zitiID, err := c.createIdentity(ctx, identityCreate)
-	if err != nil {
-		return "", nil, err
-	}
-
-	identityJSON, err := c.enrollIdentity(ctx, zitiID)
-	if err != nil {
-		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, err)
-	}
-	return zitiID, identityJSON, nil
+	return c.createAndEnrollIdentity(ctx, identityCreate)
 }
 
 func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uuid.UUID, roleAttributes []string) (string, []byte, error) {
@@ -519,16 +558,7 @@ func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uui
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 	}
 
-	zitiID, err := c.createIdentity(ctx, identityCreate)
-	if err != nil {
-		return "", nil, err
-	}
-
-	identityJSON, err := c.enrollIdentity(ctx, zitiID)
-	if err != nil {
-		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, err)
-	}
-	return zitiID, identityJSON, nil
+	return c.createAndEnrollIdentity(ctx, identityCreate)
 }
 
 func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]byte, error) {
@@ -537,46 +567,10 @@ func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]b
 		return nil, err
 	}
 
-func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, error) {
-	name := fmt.Sprintf("app-%s-%s", slug, id.ShortUUID())
-	identityType := rest_model.IdentityTypeDevice
-	isAdmin := false
-	roleAttrs := rest_model.Attributes{"apps"}
-	externalID := appID.String()
-	params := identity.NewCreateIdentityParamsWithContext(ctx)
-	params.Identity = &rest_model.IdentityCreate{
-		Name:           &name,
-		Type:           &identityType,
-		IsAdmin:        &isAdmin,
-		RoleAttributes: &roleAttrs,
-		ExternalID:     &externalID,
-		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
-	}
+	parseToken := parseEnrollmentToken
+	enrollFn := enrollIdentity
 
-	return c.createAndEnrollIdentity(ctx, params)
-}
-
-func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uuid.UUID, roleAttributes []string) (string, []byte, error) {
-	name := fmt.Sprintf("runner-%s-%s", runnerID.String(), id.ShortUUID())
-	identityType := rest_model.IdentityTypeDevice
-	isAdmin := false
-	roleAttrs := rest_model.Attributes(roleAttributes)
-	externalID := runnerID.String()
-	params := identity.NewCreateIdentityParamsWithContext(ctx)
-	params.Identity = &rest_model.IdentityCreate{
-		Name:           &name,
-		Type:           &identityType,
-		IsAdmin:        &isAdmin,
-		RoleAttributes: &roleAttrs,
-		ExternalID:     &externalID,
-		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
-	}
-
-	return c.createAndEnrollIdentity(ctx, params)
-}
-
-func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]byte, error) {
-	jwt, err := c.fetchEnrollmentJWT(ctx, zitiIdentityID)
+	claims, _, err := parseToken(jwt)
 	if err != nil {
 		return nil, fmt.Errorf("parse enrollment token: %w", err)
 	}
@@ -585,7 +579,7 @@ func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]b
 	if err := keyAlg.Set("EC"); err != nil {
 		return nil, fmt.Errorf("set key algorithm: %w", err)
 	}
-	config, err := enroll.Enroll(enroll.EnrollmentFlags{Token: claims, KeyAlg: keyAlg})
+	config, err := enrollFn(enroll.EnrollmentFlags{Token: claims, KeyAlg: keyAlg})
 	if err != nil {
 		return nil, fmt.Errorf("enroll identity: %w", err)
 	}
@@ -602,7 +596,8 @@ func (c *Client) fetchEnrollmentJWT(ctx context.Context, zitiIdentityID string) 
 	var detail *identity.DetailIdentityOK
 	err := c.withReauth(func() error {
 		var callErr error
-		detail, callErr = c.identity.DetailIdentity(detailParams, nil)
+		identityClient := c.identityClient()
+		detail, callErr = identityClient.DetailIdentity(detailParams, nil)
 		return callErr
 	})
 	if err != nil {
@@ -630,7 +625,8 @@ func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) erro
 	params := identity.NewDeleteIdentityParamsWithContext(ctx)
 	params.ID = zitiIdentityID
 	err := c.withReauth(func() error {
-		_, callErr := c.identity.DeleteIdentity(params, nil)
+		identityClient := c.identityClient()
+		_, callErr := identityClient.DeleteIdentity(params, nil)
 		return callErr
 	})
 	if err == nil {
