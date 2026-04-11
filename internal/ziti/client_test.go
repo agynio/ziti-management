@@ -4,17 +4,15 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/go-openapi/runtime"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/openziti/edge-api/rest_management_api_client/config"
 	"github.com/openziti/edge-api/rest_management_api_client/identity"
 	"github.com/openziti/edge-api/rest_management_api_client/service"
+	"github.com/openziti/edge-api/rest_management_api_client/service_policy"
 	"github.com/openziti/edge-api/rest_model"
-	sdkziti "github.com/openziti/sdk-golang/ziti"
-	"github.com/openziti/sdk-golang/ziti/enroll"
 )
 
 type fakeIdentityService struct {
@@ -61,6 +59,44 @@ func (f *fakeServiceService) DeleteService(params *service.DeleteServiceParams, 
 		return nil, errors.New("delete service not stubbed")
 	}
 	return f.deleteServiceFunc(params)
+}
+
+type fakeConfigService struct {
+	createConfigFunc func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error)
+	deleteConfigFunc func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error)
+}
+
+func (f *fakeConfigService) CreateConfig(params *config.CreateConfigParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.CreateConfigCreated, error) {
+	if f.createConfigFunc == nil {
+		return nil, errors.New("create config not stubbed")
+	}
+	return f.createConfigFunc(params)
+}
+
+func (f *fakeConfigService) DeleteConfig(params *config.DeleteConfigParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.DeleteConfigOK, error) {
+	if f.deleteConfigFunc == nil {
+		return nil, errors.New("delete config not stubbed")
+	}
+	return f.deleteConfigFunc(params)
+}
+
+type fakeServicePolicyService struct {
+	createServicePolicyFunc func(params *service_policy.CreateServicePolicyParams) (*service_policy.CreateServicePolicyCreated, error)
+	deleteServicePolicyFunc func(params *service_policy.DeleteServicePolicyParams) (*service_policy.DeleteServicePolicyOK, error)
+}
+
+func (f *fakeServicePolicyService) CreateServicePolicy(params *service_policy.CreateServicePolicyParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.CreateServicePolicyCreated, error) {
+	if f.createServicePolicyFunc == nil {
+		return nil, errors.New("create service policy not stubbed")
+	}
+	return f.createServicePolicyFunc(params)
+}
+
+func (f *fakeServicePolicyService) DeleteServicePolicy(params *service_policy.DeleteServicePolicyParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.DeleteServicePolicyOK, error) {
+	if f.deleteServicePolicyFunc == nil {
+		return nil, errors.New("delete service policy not stubbed")
+	}
+	return f.deleteServicePolicyFunc(params)
 }
 
 func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
@@ -129,328 +165,365 @@ func TestCreateAgentIdentityCreateFailure(t *testing.T) {
 	}
 }
 
-func TestCreateAndEnrollRunnerIdentity(t *testing.T) {
+func TestCreateServiceWithConfigs(t *testing.T) {
 	ctx := context.Background()
-	runnerID := uuid.New()
-	createdID := "runner-created-id"
-	jwtToken := "jwt-token"
-	roleAttributes := []string{"runner-services", "extra"}
-	enrollCalled := false
 
-	stubClientEnrollment(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
-		if token != jwtToken {
-			t.Fatalf("expected jwt %q, got %q", jwtToken, token)
+	t.Run("no configs", func(t *testing.T) {
+		serviceID := "service-id"
+		fakeService := &fakeServiceService{
+			createServiceFunc: func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error) {
+				if params == nil || params.Service == nil {
+					t.Fatalf("expected service create params")
+				}
+				if params.Service.Name == nil || *params.Service.Name != "my-service" {
+					t.Fatalf("unexpected service name: %#v", params.Service.Name)
+				}
+				if !reflect.DeepEqual(params.Service.RoleAttributes, []string{"role"}) {
+					t.Fatalf("unexpected role attributes: %#v", params.Service.RoleAttributes)
+				}
+				if len(params.Service.Configs) != 0 {
+					t.Fatalf("expected no configs, got %#v", params.Service.Configs)
+				}
+				return createServiceResponse(serviceID), nil
+			},
 		}
-		return &sdkziti.EnrollmentClaims{}, nil, nil
-	}, func(flags enroll.EnrollmentFlags) (*sdkziti.Config, error) {
-		enrollCalled = true
-		if flags.Token == nil {
-			t.Fatalf("expected enrollment claims")
+		fakeConfig := &fakeConfigService{
+			createConfigFunc: func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error) {
+				t.Fatalf("create config should not be called: %#v", params)
+				return nil, nil
+			},
+			deleteConfigFunc: func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error) {
+				t.Fatalf("delete config should not be called: %#v", params)
+				return nil, nil
+			},
 		}
-		if !flags.KeyAlg.EC() {
-			t.Fatalf("expected EC key algorithm")
+
+		client := &Client{service: fakeService, config: fakeConfig}
+		got, err := client.CreateServiceWithConfigs(ctx, "my-service", []string{"role"}, nil, nil)
+		if err != nil {
+			t.Fatalf("create service with configs: %v", err)
 		}
-		return &sdkziti.Config{}, nil
+		if got != serviceID {
+			t.Fatalf("expected service id %q, got %q", serviceID, got)
+		}
 	})
 
-	fake := &fakeIdentityService{
-		deleteIdentityFunc: func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error) {
-			t.Fatalf("delete identity should not be called: %#v", params)
-			return nil, nil
+	t.Run("creates configs", func(t *testing.T) {
+		host := &HostV1ConfigData{Protocol: "tcp", Address: "127.0.0.1", Port: 8080}
+		intercept := &InterceptV1ConfigData{
+			Protocols: []string{"tcp"},
+			Addresses: []string{"example.com"},
+			PortRanges: []PortRangeData{{
+				Low:  80,
+				High: 80,
+			}},
+		}
+		configIDs := []string{"host-config", "intercept-config"}
+		serviceID := "service-id"
+		callIndex := 0
+
+		fakeConfig := &fakeConfigService{
+			createConfigFunc: func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error) {
+				if params == nil || params.Config == nil {
+					t.Fatalf("expected config create params")
+				}
+				if params.Config.ConfigTypeID == nil || params.Config.Name == nil {
+					t.Fatalf("expected config type and name")
+				}
+				data, ok := params.Config.Data.(map[string]any)
+				if !ok {
+					t.Fatalf("expected config data map, got %#v", params.Config.Data)
+				}
+
+				switch callIndex {
+				case 0:
+					if *params.Config.ConfigTypeID != "host.v1" {
+						t.Fatalf("unexpected config type: %s", *params.Config.ConfigTypeID)
+					}
+					if *params.Config.Name != "svc-host-v1" {
+						t.Fatalf("unexpected config name: %s", *params.Config.Name)
+					}
+					expected := map[string]any{
+						"protocol": "tcp",
+						"address":  "127.0.0.1",
+						"port":     int32(8080),
+					}
+					if !reflect.DeepEqual(data, expected) {
+						t.Fatalf("unexpected host config data: %#v", data)
+					}
+				case 1:
+					if *params.Config.ConfigTypeID != "intercept.v1" {
+						t.Fatalf("unexpected config type: %s", *params.Config.ConfigTypeID)
+					}
+					if *params.Config.Name != "svc-intercept-v1" {
+						t.Fatalf("unexpected config name: %s", *params.Config.Name)
+					}
+					expected := map[string]any{
+						"protocols": []string{"tcp"},
+						"addresses": []string{"example.com"},
+						"portRanges": []map[string]any{{
+							"low":  int32(80),
+							"high": int32(80),
+						}},
+					}
+					if !reflect.DeepEqual(data, expected) {
+						t.Fatalf("unexpected intercept config data: %#v", data)
+					}
+				default:
+					t.Fatalf("unexpected config create call %d", callIndex)
+				}
+				configID := configIDs[callIndex]
+				callIndex++
+				return createConfigResponse(configID), nil
+			},
+		}
+
+		fakeService := &fakeServiceService{
+			createServiceFunc: func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error) {
+				if params == nil || params.Service == nil {
+					t.Fatalf("expected service create params")
+				}
+				if !reflect.DeepEqual(params.Service.Configs, configIDs) {
+					t.Fatalf("unexpected configs: %#v", params.Service.Configs)
+				}
+				return createServiceResponse(serviceID), nil
+			},
+		}
+
+		client := &Client{service: fakeService, config: fakeConfig}
+		got, err := client.CreateServiceWithConfigs(ctx, "svc", []string{"role"}, host, intercept)
+		if err != nil {
+			t.Fatalf("create service with configs: %v", err)
+		}
+		if got != serviceID {
+			t.Fatalf("expected service id %q, got %q", serviceID, got)
+		}
+	})
+
+	t.Run("cleanup on service failure", func(t *testing.T) {
+		host := &HostV1ConfigData{Protocol: "tcp", Address: "127.0.0.1", Port: 8080}
+		intercept := &InterceptV1ConfigData{
+			Protocols: []string{"tcp"},
+			Addresses: []string{"example.com"},
+			PortRanges: []PortRangeData{{
+				Low:  80,
+				High: 80,
+			}},
+		}
+		serviceErr := errors.New("service create failed")
+		deleted := make([]string, 0, 2)
+		configIDs := []string{"host-config", "intercept-config"}
+		callIndex := 0
+
+		fakeConfig := &fakeConfigService{
+			createConfigFunc: func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error) {
+				configID := configIDs[callIndex]
+				callIndex++
+				return createConfigResponse(configID), nil
+			},
+			deleteConfigFunc: func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error) {
+				if params == nil {
+					t.Fatalf("expected delete config params")
+				}
+				deleted = append(deleted, params.ID)
+				return &config.DeleteConfigOK{}, nil
+			},
+		}
+
+		fakeService := &fakeServiceService{
+			createServiceFunc: func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error) {
+				return nil, serviceErr
+			},
+		}
+
+		client := &Client{service: fakeService, config: fakeConfig}
+		_, err := client.CreateServiceWithConfigs(ctx, "svc", []string{"role"}, host, intercept)
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if !errors.Is(err, serviceErr) {
+			t.Fatalf("expected service error, got %v", err)
+		}
+		if len(deleted) != 2 {
+			t.Fatalf("expected 2 configs deleted, got %v", deleted)
+		}
+		deletions := map[string]bool{}
+		for _, id := range deleted {
+			deletions[id] = true
+		}
+		for _, id := range configIDs {
+			if !deletions[id] {
+				t.Fatalf("expected config %s deleted", id)
+			}
+		}
+	})
+}
+
+func TestCreateServicePolicy(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name       string
+		policyType string
+		wantType   rest_model.DialBind
+	}{
+		{
+			name:       "bind",
+			policyType: "Bind",
+			wantType:   rest_model.DialBindBind,
 		},
+		{
+			name:       "dial",
+			policyType: "Dial",
+			wantType:   rest_model.DialBindDial,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeServicePolicyService{
+				createServicePolicyFunc: func(params *service_policy.CreateServicePolicyParams) (*service_policy.CreateServicePolicyCreated, error) {
+					if params == nil || params.Policy == nil {
+						t.Fatalf("expected service policy params")
+					}
+					if params.Policy.Name == nil || *params.Policy.Name != "policy" {
+						t.Fatalf("unexpected policy name")
+					}
+					if params.Policy.Type == nil || *params.Policy.Type != tc.wantType {
+						t.Fatalf("unexpected policy type: %#v", params.Policy.Type)
+					}
+					if params.Policy.Semantic == nil || *params.Policy.Semantic != rest_model.SemanticAnyOf {
+						t.Fatalf("unexpected policy semantic: %#v", params.Policy.Semantic)
+					}
+					if !reflect.DeepEqual(params.Policy.IdentityRoles, rest_model.Roles{"#identity"}) {
+						t.Fatalf("unexpected identity roles: %#v", params.Policy.IdentityRoles)
+					}
+					if !reflect.DeepEqual(params.Policy.ServiceRoles, rest_model.Roles{"#service"}) {
+						t.Fatalf("unexpected service roles: %#v", params.Policy.ServiceRoles)
+					}
+					return createServicePolicyResponse("policy-id"), nil
+				},
+			}
+
+			client := &Client{servicePolicy: fake}
+			policyID, err := client.CreateServicePolicy(ctx, "policy", tc.policyType, []string{"#identity"}, []string{"#service"})
+			if err != nil {
+				t.Fatalf("create service policy: %v", err)
+			}
+			if policyID != "policy-id" {
+				t.Fatalf("expected policy id, got %q", policyID)
+			}
+		})
+	}
+}
+
+func TestDeleteServicePolicy(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		fake := &fakeServicePolicyService{
+			deleteServicePolicyFunc: func(params *service_policy.DeleteServicePolicyParams) (*service_policy.DeleteServicePolicyOK, error) {
+				if params == nil || params.ID != "policy-id" {
+					t.Fatalf("unexpected delete params: %#v", params)
+				}
+				return &service_policy.DeleteServicePolicyOK{}, nil
+			},
+		}
+		client := &Client{servicePolicy: fake}
+		if err := client.DeleteServicePolicy(ctx, "policy-id"); err != nil {
+			t.Fatalf("delete service policy: %v", err)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		fake := &fakeServicePolicyService{
+			deleteServicePolicyFunc: func(params *service_policy.DeleteServicePolicyParams) (*service_policy.DeleteServicePolicyOK, error) {
+				return nil, &service_policy.DeleteServicePolicyNotFound{}
+			},
+		}
+		client := &Client{servicePolicy: fake}
+		err := client.DeleteServicePolicy(ctx, "missing")
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if !errors.Is(err, ErrServicePolicyNotFound) {
+			t.Fatalf("expected not found error, got %v", err)
+		}
+	})
+}
+
+func TestCreateDeviceIdentity(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+	createdID := "created-id"
+	jwt := "jwt-token"
+
+	fake := &fakeIdentityService{
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			assertCreateIdentityParams(t, params, runnerID, roleAttributes, "runner-"+runnerID.String()+"-")
+			assertCreateExternalID(t, params, userID)
+			if params == nil || params.Identity == nil || params.Identity.Name == nil {
+				t.Fatalf("expected identity name")
+			}
+			if *params.Identity.Name != "laptop" {
+				t.Fatalf("unexpected identity name: %s", *params.Identity.Name)
+			}
+			if params.Identity.RoleAttributes == nil || !reflect.DeepEqual(*params.Identity.RoleAttributes, rest_model.Attributes{"devices"}) {
+				t.Fatalf("unexpected role attributes: %#v", params.Identity.RoleAttributes)
+			}
+			if params.Identity.Enrollment == nil || !params.Identity.Enrollment.Ott {
+				t.Fatalf("expected ott enrollment")
+			}
 			return createIdentityResponse(createdID), nil
 		},
 		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
 			if params == nil || params.ID != createdID {
 				t.Fatalf("expected detail identity id %q, got %#v", createdID, params)
 			}
-			return detailIdentityResponse(jwtToken), nil
+			return detailIdentityResponse(jwt), nil
 		},
 	}
 
 	client := &Client{identity: fake}
-	zitiID, identityJSON, err := client.CreateAndEnrollRunnerIdentity(ctx, runnerID, roleAttributes)
+	zitiID, token, err := client.CreateDeviceIdentity(ctx, userID, "laptop")
 	if err != nil {
-		t.Fatalf("create runner identity: %v", err)
+		t.Fatalf("create device identity: %v", err)
 	}
 	if zitiID != createdID {
 		t.Fatalf("expected identity id %q, got %q", createdID, zitiID)
 	}
-	if len(identityJSON) == 0 {
-		t.Fatalf("expected identity json")
-	}
-	if !enrollCalled {
-		t.Fatalf("expected enroll called")
+	if token != jwt {
+		t.Fatalf("expected jwt %q, got %q", jwt, token)
 	}
 }
 
-func TestCreateAndEnrollRunnerIdentityEnrollFailureCleansUp(t *testing.T) {
+func TestCreateDeviceIdentityCreateFailure(t *testing.T) {
 	ctx := context.Background()
-	runnerID := uuid.New()
-	createdID := "runner-created-id"
-	jwtToken := "jwt-token"
-	roleAttributes := []string{"runner-services"}
-	parseErr := errors.New("parse failed")
-	deleteCalled := false
-
-	stubClientEnrollment(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
-		if token != jwtToken {
-			t.Fatalf("expected jwt %q, got %q", jwtToken, token)
-		}
-		return nil, nil, parseErr
-	}, func(flags enroll.EnrollmentFlags) (*sdkziti.Config, error) {
-		t.Fatalf("enroll should not be called")
-		return nil, nil
-	})
+	userID := uuid.New()
+	createErr := errors.New("create failed")
+	var detailCalled bool
 
 	fake := &fakeIdentityService{
-		deleteIdentityFunc: func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error) {
-			deleteCalled = true
-			if params == nil || params.ID != createdID {
-				t.Fatalf("expected delete identity id %q, got %#v", createdID, params)
-			}
-			return &identity.DeleteIdentityOK{}, nil
-		},
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			assertCreateIdentityParams(t, params, runnerID, roleAttributes, "runner-"+runnerID.String()+"-")
-			return createIdentityResponse(createdID), nil
+			assertCreateExternalID(t, params, userID)
+			return nil, createErr
 		},
 		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			return detailIdentityResponse(jwtToken), nil
+			detailCalled = true
+			return nil, errors.New("detail identity should not be called")
 		},
 	}
 
 	client := &Client{identity: fake}
-	_, _, err := client.CreateAndEnrollRunnerIdentity(ctx, runnerID, roleAttributes)
+	_, _, err := client.CreateDeviceIdentity(ctx, userID, "laptop")
 	if err == nil {
-		t.Fatalf("expected error")
+		t.Fatalf("expected create error")
 	}
-	if !strings.Contains(err.Error(), "parse enrollment token") {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, createErr) {
+		t.Fatalf("expected error %q, got %v", createErr, err)
 	}
-	if !deleteCalled {
-		t.Fatalf("expected cleanup delete")
-	}
-}
-
-func TestCreateAndEnrollAppIdentity(t *testing.T) {
-	ctx := context.Background()
-	appID := uuid.New()
-	createdID := "app-created-id"
-	slug := "example"
-	jwtToken := "jwt-token"
-	enrollCalled := false
-
-	stubClientEnrollment(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
-		if token != jwtToken {
-			t.Fatalf("expected jwt %q, got %q", jwtToken, token)
-		}
-		return &sdkziti.EnrollmentClaims{}, nil, nil
-	}, func(flags enroll.EnrollmentFlags) (*sdkziti.Config, error) {
-		enrollCalled = true
-		if flags.Token == nil {
-			t.Fatalf("expected enrollment claims")
-		}
-		if !flags.KeyAlg.EC() {
-			t.Fatalf("expected EC key algorithm")
-		}
-		return &sdkziti.Config{}, nil
-	})
-
-	fake := &fakeIdentityService{
-		deleteIdentityFunc: func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error) {
-			t.Fatalf("delete identity should not be called: %#v", params)
-			return nil, nil
-		},
-		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			assertCreateIdentityParams(t, params, appID, []string{"apps"}, "app-"+slug+"-")
-			return createIdentityResponse(createdID), nil
-		},
-		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			if params == nil || params.ID != createdID {
-				t.Fatalf("expected detail identity id %q, got %#v", createdID, params)
-			}
-			return detailIdentityResponse(jwtToken), nil
-		},
-	}
-
-	client := &Client{identity: fake}
-	zitiID, identityJSON, err := client.CreateAndEnrollAppIdentity(ctx, appID, slug)
-	if err != nil {
-		t.Fatalf("create app identity: %v", err)
-	}
-	if zitiID != createdID {
-		t.Fatalf("expected identity id %q, got %q", createdID, zitiID)
-	}
-	if len(identityJSON) == 0 {
-		t.Fatalf("expected identity json")
-	}
-	if !enrollCalled {
-		t.Fatalf("expected enroll called")
-	}
-}
-
-func TestCreateAndEnrollAppIdentityEnrollFailureCleansUp(t *testing.T) {
-	ctx := context.Background()
-	appID := uuid.New()
-	createdID := "app-created-id"
-	slug := "example"
-	jwtToken := "jwt-token"
-	parseErr := errors.New("parse failed")
-	deleteCalled := false
-
-	stubClientEnrollment(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
-		if token != jwtToken {
-			t.Fatalf("expected jwt %q, got %q", jwtToken, token)
-		}
-		return nil, nil, parseErr
-	}, func(flags enroll.EnrollmentFlags) (*sdkziti.Config, error) {
-		t.Fatalf("enroll should not be called")
-		return nil, nil
-	})
-
-	fake := &fakeIdentityService{
-		deleteIdentityFunc: func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error) {
-			deleteCalled = true
-			if params == nil || params.ID != createdID {
-				t.Fatalf("expected delete identity id %q, got %#v", createdID, params)
-			}
-			return &identity.DeleteIdentityOK{}, nil
-		},
-		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			assertCreateIdentityParams(t, params, appID, []string{"apps"}, "app-"+slug+"-")
-			return createIdentityResponse(createdID), nil
-		},
-		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			return detailIdentityResponse(jwtToken), nil
-		},
-	}
-
-	client := &Client{identity: fake}
-	_, _, err := client.CreateAndEnrollAppIdentity(ctx, appID, slug)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	if !strings.Contains(err.Error(), "parse enrollment token") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !deleteCalled {
-		t.Fatalf("expected cleanup delete")
-	}
-}
-
-func TestCreateService(t *testing.T) {
-	ctx := context.Background()
-	serviceID := "service-id"
-	name := "runner-abc"
-	roles := []string{"runner-services"}
-
-	fake := &fakeServiceService{
-		createServiceFunc: func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error) {
-			if params == nil || params.Service == nil || params.Service.Name == nil {
-				t.Fatalf("expected service name")
-			}
-			if *params.Service.Name != name {
-				t.Fatalf("expected name %q, got %q", name, *params.Service.Name)
-			}
-			if !reflect.DeepEqual(params.Service.RoleAttributes, roles) {
-				t.Fatalf("expected roles %v, got %v", roles, params.Service.RoleAttributes)
-			}
-			if params.Service.EncryptionRequired == nil || !*params.Service.EncryptionRequired {
-				t.Fatalf("expected encryption required")
-			}
-			return createServiceResponse(serviceID), nil
-		},
-	}
-
-	client := &Client{service: fake}
-	createdID, err := client.CreateService(ctx, name, roles)
-	if err != nil {
-		t.Fatalf("create service: %v", err)
-	}
-	if createdID != serviceID {
-		t.Fatalf("expected service id %q, got %q", serviceID, createdID)
-	}
-}
-
-func TestDeleteService(t *testing.T) {
-	ctx := context.Background()
-	serviceID := "service-id"
-	deleteCalled := false
-
-	fake := &fakeServiceService{
-		deleteServiceFunc: func(params *service.DeleteServiceParams) (*service.DeleteServiceOK, error) {
-			deleteCalled = true
-			if params == nil || params.ID != serviceID {
-				t.Fatalf("expected delete service id %q, got %#v", serviceID, params)
-			}
-			return &service.DeleteServiceOK{}, nil
-		},
-	}
-
-	client := &Client{service: fake}
-	if err := client.DeleteService(ctx, serviceID); err != nil {
-		t.Fatalf("delete service: %v", err)
-	}
-	if !deleteCalled {
-		t.Fatalf("expected delete called")
-	}
-}
-
-func TestDeleteServiceNotFound(t *testing.T) {
-	ctx := context.Background()
-	serviceID := "service-id"
-
-	fake := &fakeServiceService{
-		deleteServiceFunc: func(params *service.DeleteServiceParams) (*service.DeleteServiceOK, error) {
-			return nil, &service.DeleteServiceNotFound{}
-		},
-	}
-
-	client := &Client{service: fake}
-	if err := client.DeleteService(ctx, serviceID); err == nil {
-		t.Fatalf("expected error")
-	} else if !errors.Is(err, ErrServiceNotFound) {
-		t.Fatalf("expected ErrServiceNotFound, got %v", err)
-	}
-}
-
-type unauthorizedError struct{}
-
-func (unauthorizedError) Error() string {
-	return "unauthorized"
-}
-
-func (unauthorizedError) IsCode(code int) bool {
-	return code == 401
-}
-
-func TestWithReauthRetriesOnUnauthorized(t *testing.T) {
-	client := &Client{}
-	reauthCalled := 0
-	client.reauthenticateFn = func() error {
-		reauthCalled++
-		return nil
-	}
-
-	callCount := 0
-	err := client.withReauth(func() error {
-		callCount++
-		if callCount == 1 {
-			return unauthorizedError{}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("withReauth returned error: %v", err)
-	}
-	if callCount != 2 {
-		t.Fatalf("expected 2 attempts, got %d", callCount)
-	}
-	if reauthCalled != 1 {
-		t.Fatalf("expected reauth once, got %d", reauthCalled)
+	if detailCalled {
+		t.Fatalf("expected detail not called")
 	}
 }
 
@@ -461,28 +534,6 @@ func assertCreateExternalID(t *testing.T, params *identity.CreateIdentityParams,
 	}
 	if *params.Identity.ExternalID != agentID.String() {
 		t.Fatalf("expected external id %q, got %q", agentID.String(), *params.Identity.ExternalID)
-	}
-}
-
-func assertCreateIdentityParams(t *testing.T, params *identity.CreateIdentityParams, identityID uuid.UUID, roles []string, namePrefix string) {
-	t.Helper()
-	if params == nil || params.Identity == nil || params.Identity.Name == nil {
-		t.Fatalf("expected identity params")
-	}
-	if !strings.HasPrefix(*params.Identity.Name, namePrefix) {
-		t.Fatalf("expected name prefix %q, got %q", namePrefix, *params.Identity.Name)
-	}
-	if params.Identity.ExternalID == nil {
-		t.Fatalf("expected external id")
-	}
-	if *params.Identity.ExternalID != identityID.String() {
-		t.Fatalf("expected external id %q, got %q", identityID.String(), *params.Identity.ExternalID)
-	}
-	if params.Identity.RoleAttributes == nil {
-		t.Fatalf("expected role attributes")
-	}
-	if !reflect.DeepEqual([]string(*params.Identity.RoleAttributes), roles) {
-		t.Fatalf("expected roles %v, got %v", roles, []string(*params.Identity.RoleAttributes))
 	}
 }
 
@@ -500,19 +551,10 @@ func createServiceResponse(serviceID string) *service.CreateServiceCreated {
 	return &service.CreateServiceCreated{Payload: &rest_model.CreateEnvelope{Data: &rest_model.CreateLocation{ID: serviceID}}}
 }
 
-func stubClientEnrollment(
-	t *testing.T,
-	parse func(string) (*sdkziti.EnrollmentClaims, *jwt.Token, error),
-	enrollFn func(enroll.EnrollmentFlags) (*sdkziti.Config, error),
-) {
-	t.Helper()
+func createConfigResponse(configID string) *config.CreateConfigCreated {
+	return &config.CreateConfigCreated{Payload: &rest_model.CreateEnvelope{Data: &rest_model.CreateLocation{ID: configID}}}
+}
 
-	originalParse := parseEnrollmentToken
-	originalEnroll := enrollIdentity
-	parseEnrollmentToken = parse
-	enrollIdentity = enrollFn
-	t.Cleanup(func() {
-		parseEnrollmentToken = originalParse
-		enrollIdentity = originalEnroll
-	})
+func createServicePolicyResponse(policyID string) *service_policy.CreateServicePolicyCreated {
+	return &service_policy.CreateServicePolicyCreated{Payload: &rest_model.CreateEnvelope{Data: &rest_model.CreateLocation{ID: policyID}}}
 }
