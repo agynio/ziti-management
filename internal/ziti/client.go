@@ -14,8 +14,10 @@ import (
 	"github.com/agynio/ziti-management/internal/id"
 	"github.com/go-openapi/runtime"
 	"github.com/google/uuid"
+	"github.com/openziti/edge-api/rest_management_api_client/config"
 	"github.com/openziti/edge-api/rest_management_api_client/identity"
 	"github.com/openziti/edge-api/rest_management_api_client/service"
+	"github.com/openziti/edge-api/rest_management_api_client/service_policy"
 	"github.com/openziti/edge-api/rest_model"
 	"github.com/openziti/edge-api/rest_util"
 	"github.com/openziti/sdk-golang/ziti"
@@ -24,6 +26,7 @@ import (
 
 var ErrIdentityNotFound = errors.New("identity not found")
 var ErrServiceNotFound = errors.New("service not found")
+var ErrServicePolicyNotFound = errors.New("service policy not found")
 
 type identityService interface {
 	CreateIdentity(params *identity.CreateIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.CreateIdentityCreated, error)
@@ -36,9 +39,21 @@ type serviceService interface {
 	DeleteService(params *service.DeleteServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DeleteServiceOK, error)
 }
 
+type configService interface {
+	CreateConfig(params *config.CreateConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.CreateConfigCreated, error)
+	DeleteConfig(params *config.DeleteConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.DeleteConfigOK, error)
+}
+
+type servicePolicyService interface {
+	CreateServicePolicy(params *service_policy.CreateServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.CreateServicePolicyCreated, error)
+	DeleteServicePolicy(params *service_policy.DeleteServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.DeleteServicePolicyOK, error)
+}
+
 type Client struct {
 	identity      identityService
 	service       serviceService
+	config        configService
+	servicePolicy servicePolicyService
 	controllerURL string
 	certFile      string
 	keyFile       string
@@ -61,6 +76,8 @@ func NewClient(controllerURL, certFile, keyFile, caFile string) (*Client, error)
 	return &Client{
 		identity:      client.Identity,
 		service:       client.Service,
+		config:        client.Config,
+		servicePolicy: client.ServicePolicy,
 		controllerURL: controllerURL,
 		certFile:      certFile,
 		keyFile:       keyFile,
@@ -126,6 +143,8 @@ func (c *Client) reauthenticate() error {
 	}
 	c.identity = client.Identity
 	c.service = client.Service
+	c.config = client.Config
+	c.servicePolicy = client.ServicePolicy
 	return nil
 }
 
@@ -194,13 +213,102 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (st
 	return zitiID, jwt, nil
 }
 
+func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error) {
+	identityType := rest_model.IdentityTypeDevice
+	isAdmin := false
+	roleAttrs := rest_model.Attributes{"devices"}
+	externalID := userIdentityID.String()
+	params := identity.NewCreateIdentityParamsWithContext(ctx)
+	params.Identity = &rest_model.IdentityCreate{
+		Name:           &name,
+		Type:           &identityType,
+		IsAdmin:        &isAdmin,
+		RoleAttributes: &roleAttrs,
+		ExternalID:     &externalID,
+		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
+	}
+
+	var created *identity.CreateIdentityCreated
+	err := c.withReauth(func() error {
+		var callErr error
+		created, callErr = c.identity.CreateIdentity(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("create ziti identity: %w", err)
+	}
+	if created.Payload == nil || created.Payload.Data == nil {
+		return "", "", errors.New("create ziti identity response missing data")
+	}
+	zitiID := created.Payload.Data.ID
+	if zitiID == "" {
+		return "", "", errors.New("create ziti identity response missing id")
+	}
+
+	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
+	if err != nil {
+		return "", "", err
+	}
+	return zitiID, jwt, nil
+}
+
 func (c *Client) CreateService(ctx context.Context, name string, roleAttributes []string) (string, error) {
+	return c.createService(ctx, name, roleAttributes, nil)
+}
+
+func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, roleAttributes []string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData) (string, error) {
+	if hostV1 == nil && interceptV1 == nil {
+		return c.CreateService(ctx, name, roleAttributes)
+	}
+
+	configIDs := make([]string, 0, 2)
+	if hostV1 != nil {
+		data := map[string]any{
+			"protocol": hostV1.Protocol,
+			"address":  hostV1.Address,
+			"port":     hostV1.Port,
+		}
+		configID, err := c.createConfig(ctx, "host.v1", fmt.Sprintf("%s-host-v1", name), data)
+		if err != nil {
+			return "", err
+		}
+		configIDs = append(configIDs, configID)
+	}
+	if interceptV1 != nil {
+		portRanges := make([]map[string]any, len(interceptV1.PortRanges))
+		for i, portRange := range interceptV1.PortRanges {
+			portRanges[i] = map[string]any{
+				"low":  portRange.Low,
+				"high": portRange.High,
+			}
+		}
+		data := map[string]any{
+			"protocols":  interceptV1.Protocols,
+			"addresses":  interceptV1.Addresses,
+			"portRanges": portRanges,
+		}
+		configID, err := c.createConfig(ctx, "intercept.v1", fmt.Sprintf("%s-intercept-v1", name), data)
+		if err != nil {
+			return "", c.cleanupConfigs(ctx, configIDs, err)
+		}
+		configIDs = append(configIDs, configID)
+	}
+
+	serviceID, err := c.createService(ctx, name, roleAttributes, configIDs)
+	if err != nil {
+		return "", c.cleanupConfigs(ctx, configIDs, err)
+	}
+	return serviceID, nil
+}
+
+func (c *Client) createService(ctx context.Context, name string, roleAttributes []string, configIDs []string) (string, error) {
 	encryptionRequired := true
 	params := service.NewCreateServiceParamsWithContext(ctx)
 	params.Service = &rest_model.ServiceCreate{
 		Name:               &name,
 		RoleAttributes:     roleAttributes,
 		EncryptionRequired: &encryptionRequired,
+		Configs:            configIDs,
 	}
 
 	var created *service.CreateServiceCreated
@@ -222,6 +330,66 @@ func (c *Client) CreateService(ctx context.Context, name string, roleAttributes 
 	return serviceID, nil
 }
 
+func (c *Client) createConfig(ctx context.Context, configTypeID, name string, data map[string]any) (string, error) {
+	params := config.NewCreateConfigParamsWithContext(ctx)
+	params.Config = &rest_model.ConfigCreate{
+		ConfigTypeID: &configTypeID,
+		Name:         &name,
+		Data:         data,
+	}
+
+	var created *config.CreateConfigCreated
+	err := c.withReauth(func() error {
+		var callErr error
+		created, callErr = c.config.CreateConfig(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return "", fmt.Errorf("create ziti config: %w", err)
+	}
+	if created.Payload == nil || created.Payload.Data == nil {
+		return "", errors.New("create ziti config response missing data")
+	}
+	configID := created.Payload.Data.ID
+	if configID == "" {
+		return "", errors.New("create ziti config response missing id")
+	}
+	return configID, nil
+}
+
+func (c *Client) cleanupConfigs(ctx context.Context, configIDs []string, err error) error {
+	if len(configIDs) == 0 {
+		return err
+	}
+	var cleanupErr error
+	for _, configID := range configIDs {
+		if deleteErr := c.deleteConfig(ctx, configID); deleteErr != nil && cleanupErr == nil {
+			cleanupErr = deleteErr
+		}
+	}
+	if cleanupErr != nil {
+		return fmt.Errorf("%w; cleanup config failed: %w", err, cleanupErr)
+	}
+	return err
+}
+
+func (c *Client) deleteConfig(ctx context.Context, configID string) error {
+	params := config.NewDeleteConfigParamsWithContext(ctx)
+	params.ID = configID
+	err := c.withReauth(func() error {
+		_, callErr := c.config.DeleteConfig(params, nil)
+		return callErr
+	})
+	if err == nil {
+		return nil
+	}
+	var notFound *config.DeleteConfigNotFound
+	if errors.As(err, &notFound) {
+		return nil
+	}
+	return fmt.Errorf("delete ziti config: %w", err)
+}
+
 func (c *Client) DeleteService(ctx context.Context, serviceID string) error {
 	params := service.NewDeleteServiceParamsWithContext(ctx)
 	params.ID = serviceID
@@ -237,6 +405,54 @@ func (c *Client) DeleteService(ctx context.Context, serviceID string) error {
 		return ErrServiceNotFound
 	}
 	return fmt.Errorf("delete ziti service: %w", err)
+}
+
+func (c *Client) CreateServicePolicy(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string) (string, error) {
+	policy := rest_model.DialBind(policyType)
+	semantic := rest_model.SemanticAnyOf
+	params := service_policy.NewCreateServicePolicyParamsWithContext(ctx)
+	params.Policy = &rest_model.ServicePolicyCreate{
+		Name:          &name,
+		Type:          &policy,
+		Semantic:      &semantic,
+		IdentityRoles: rest_model.Roles(identityRoles),
+		ServiceRoles:  rest_model.Roles(serviceRoles),
+	}
+
+	var created *service_policy.CreateServicePolicyCreated
+	err := c.withReauth(func() error {
+		var callErr error
+		created, callErr = c.servicePolicy.CreateServicePolicy(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return "", fmt.Errorf("create ziti service policy: %w", err)
+	}
+	if created.Payload == nil || created.Payload.Data == nil {
+		return "", errors.New("create ziti service policy response missing data")
+	}
+	policyID := created.Payload.Data.ID
+	if policyID == "" {
+		return "", errors.New("create ziti service policy response missing id")
+	}
+	return policyID, nil
+}
+
+func (c *Client) DeleteServicePolicy(ctx context.Context, policyID string) error {
+	params := service_policy.NewDeleteServicePolicyParamsWithContext(ctx)
+	params.ID = policyID
+	err := c.withReauth(func() error {
+		_, callErr := c.servicePolicy.DeleteServicePolicy(params, nil)
+		return callErr
+	})
+	if err == nil {
+		return nil
+	}
+	var notFound *service_policy.DeleteServicePolicyNotFound
+	if errors.As(err, &notFound) {
+		return ErrServicePolicyNotFound
+	}
+	return fmt.Errorf("delete ziti service policy: %w", err)
 }
 
 func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string, roleAttributes []string) (string, []byte, error) {
@@ -276,7 +492,7 @@ func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string
 	return zitiID, identityJSON, nil
 }
 
-func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, string, error) {
+func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, error) {
 	name := fmt.Sprintf("app-%s-%s", slug, id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
@@ -299,29 +515,24 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 		return callErr
 	})
 	if err != nil {
-		return "", nil, "", fmt.Errorf("create ziti identity: %w", err)
+		return "", nil, fmt.Errorf("create ziti identity: %w", err)
 	}
 	if created.Payload == nil || created.Payload.Data == nil {
-		return "", nil, "", errors.New("create ziti identity response missing data")
+		return "", nil, errors.New("create ziti identity response missing data")
 	}
 	zitiID := created.Payload.Data.ID
 	if zitiID == "" {
-		return "", nil, "", errors.New("create ziti identity response missing id")
-	}
-
-	serviceID, err := c.CreateService(ctx, name, []string{"app-services"})
-	if err != nil {
-		return "", nil, "", c.CleanupAppResources(ctx, zitiID, "", err)
+		return "", nil, errors.New("create ziti identity response missing id")
 	}
 
 	identityJSON, err := c.enrollIdentity(ctx, zitiID)
 	if err != nil {
-		return "", nil, "", c.CleanupAppResources(ctx, zitiID, serviceID, err)
+		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, err)
 	}
-	return zitiID, identityJSON, serviceID, nil
+	return zitiID, identityJSON, nil
 }
 
-func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uuid.UUID, roleAttributes []string) (string, []byte, string, string, error) {
+func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uuid.UUID, roleAttributes []string) (string, []byte, error) {
 	name := fmt.Sprintf("runner-%s-%s", runnerID.String(), id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
@@ -344,27 +555,21 @@ func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uui
 		return callErr
 	})
 	if err != nil {
-		return "", nil, "", "", fmt.Errorf("create ziti identity: %w", err)
+		return "", nil, fmt.Errorf("create ziti identity: %w", err)
 	}
 	if created.Payload == nil || created.Payload.Data == nil {
-		return "", nil, "", "", errors.New("create ziti identity response missing data")
+		return "", nil, errors.New("create ziti identity response missing data")
 	}
 	zitiID := created.Payload.Data.ID
 	if zitiID == "" {
-		return "", nil, "", "", errors.New("create ziti identity response missing id")
-	}
-
-	serviceName := fmt.Sprintf("runner-%s", runnerID.String())
-	serviceID, err := c.CreateService(ctx, serviceName, []string{"runner-services"})
-	if err != nil {
-		return "", nil, "", "", c.CleanupAppResources(ctx, zitiID, "", err)
+		return "", nil, errors.New("create ziti identity response missing id")
 	}
 
 	identityJSON, err := c.enrollIdentity(ctx, zitiID)
 	if err != nil {
-		return "", nil, "", "", c.CleanupAppResources(ctx, zitiID, serviceID, err)
+		return "", nil, c.cleanupServiceIdentity(ctx, zitiID, err)
 	}
-	return zitiID, identityJSON, serviceName, serviceID, nil
+	return zitiID, identityJSON, nil
 }
 
 func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]byte, error) {
@@ -460,21 +665,6 @@ func (c *Client) cleanupServiceIdentity(ctx context.Context, zitiIdentityID stri
 		return err
 	}
 	return fmt.Errorf("%w; cleanup failed: %w", err, cleanupErr)
-}
-
-func (c *Client) CleanupAppResources(ctx context.Context, zitiIdentityID, zitiServiceID string, err error) error {
-	identityErr := c.DeleteIdentity(ctx, zitiIdentityID)
-	if identityErr != nil && !errors.Is(identityErr, ErrIdentityNotFound) {
-		err = fmt.Errorf("%w; cleanup identity failed: %w", err, identityErr)
-	}
-	if zitiServiceID == "" {
-		return err
-	}
-	serviceErr := c.DeleteService(ctx, zitiServiceID)
-	if serviceErr != nil && !errors.Is(serviceErr, ErrServiceNotFound) {
-		err = fmt.Errorf("%w; cleanup service failed: %w", err, serviceErr)
-	}
-	return err
 }
 
 func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) error {

@@ -65,3 +65,55 @@ func TestFromProtoServiceType(t *testing.T) {
 		})
 	}
 }
+
+func TestFromProtoServicePolicyType(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   zitimanagementv1.ServicePolicyType
+		want    string
+		wantErr string
+	}{
+		{
+			name:  "bind",
+			input: zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_BIND,
+			want:  "Bind",
+		},
+		{
+			name:  "dial",
+			input: zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_DIAL,
+			want:  "Dial",
+		},
+		{
+			name:    "unspecified",
+			input:   zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_UNSPECIFIED,
+			wantErr: "service policy type unspecified",
+		},
+		{
+			name:    "unknown",
+			input:   zitimanagementv1.ServicePolicyType(99),
+			wantErr: "unknown service policy type",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := fromProtoServicePolicyType(tc.input)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
