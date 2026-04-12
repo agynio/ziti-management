@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/agynio/ziti-management/internal/id"
@@ -38,6 +39,7 @@ type identityService interface {
 	CreateIdentity(params *identity.CreateIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.CreateIdentityCreated, error)
 	DeleteIdentity(params *identity.DeleteIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DeleteIdentityOK, error)
 	DetailIdentity(params *identity.DetailIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DetailIdentityOK, error)
+	ListIdentities(params *identity.ListIdentitiesParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.ListIdentitiesOK, error)
 }
 
 type serviceService interface {
@@ -251,6 +253,78 @@ func (c *Client) createIdentity(ctx context.Context, identityCreate *rest_model.
 		}
 		return created.Payload, nil
 	})
+}
+
+func (c *Client) deleteIdentityByExternalID(ctx context.Context, externalID string) error {
+	identityIDs, err := c.listIdentityIDsByExternalID(ctx, externalID)
+	if err != nil {
+		return err
+	}
+	for _, identityID := range identityIDs {
+		if err := c.DeleteIdentity(ctx, identityID); err != nil && !errors.Is(err, ErrIdentityNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) listIdentityIDsByExternalID(ctx context.Context, externalID string) ([]string, error) {
+	if externalID == "" {
+		return nil, errors.New("external id is empty")
+	}
+	filter := fmt.Sprintf("externalId=%s", strconv.Quote(externalID))
+	limit := int64(100)
+	offset := int64(0)
+	identityIDs := make([]string, 0)
+
+	for {
+		params := identity.NewListIdentitiesParamsWithContext(ctx)
+		params.Filter = &filter
+		params.Limit = &limit
+		params.Offset = &offset
+
+		var listed *identity.ListIdentitiesOK
+		err := c.withReauth(func() error {
+			var callErr error
+			identityClient := c.identityClient()
+			listed, callErr = identityClient.ListIdentities(params, nil)
+			return callErr
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list ziti identities: %w", err)
+		}
+		if listed.Payload == nil {
+			return nil, errors.New("list ziti identities response missing payload")
+		}
+		if listed.Payload.Meta == nil || listed.Payload.Meta.Pagination == nil {
+			return nil, errors.New("list ziti identities response missing pagination")
+		}
+		pagination := listed.Payload.Meta.Pagination
+		if pagination.TotalCount == nil || pagination.Limit == nil || pagination.Offset == nil {
+			return nil, errors.New("list ziti identities response missing pagination details")
+		}
+		totalCount := *pagination.TotalCount
+		if totalCount == 0 {
+			if len(listed.Payload.Data) == 0 {
+				return nil, nil
+			}
+			return nil, errors.New("list ziti identities response returned data with zero total count")
+		}
+		for _, identity := range listed.Payload.Data {
+			if identity == nil || identity.ID == nil {
+				return nil, errors.New("list ziti identities response missing identity id")
+			}
+			identityIDs = append(identityIDs, *identity.ID)
+		}
+		pageCount := int64(len(listed.Payload.Data))
+		if pageCount == 0 {
+			return nil, errors.New("list ziti identities response returned empty page")
+		}
+		if offset+pageCount >= totalCount {
+			return identityIDs, nil
+		}
+		offset += pageCount
+	}
 }
 
 func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (string, string, error) {
@@ -531,6 +605,9 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 	isAdmin := false
 	roleAttrs := rest_model.Attributes{roleAttributeApps}
 	externalID := appID.String()
+	if err := c.deleteIdentityByExternalID(ctx, externalID); err != nil {
+		return "", nil, fmt.Errorf("delete existing ziti identity: %w", err)
+	}
 	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
 		Type:           &identityType,
@@ -549,6 +626,9 @@ func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uui
 	isAdmin := false
 	roleAttrs := rest_model.Attributes(roleAttributes)
 	externalID := runnerID.String()
+	if err := c.deleteIdentityByExternalID(ctx, externalID); err != nil {
+		return "", nil, fmt.Errorf("delete existing ziti identity: %w", err)
+	}
 	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
 		Type:           &identityType,
