@@ -19,14 +19,45 @@ import (
 	"github.com/agynio/ziti-management/internal/ziti"
 )
 
+type managedIdentityStore interface {
+	InsertManagedIdentity(ctx context.Context, identity store.ManagedIdentity) error
+	DeleteManagedIdentity(ctx context.Context, zitiIdentityID string) error
+	DeleteManagedIdentityByIdentityID(ctx context.Context, identityID uuid.UUID) error
+	ResolveIdentity(ctx context.Context, zitiIdentityID string) (store.ManagedIdentity, error)
+	ResolveIdentityByIdentityID(ctx context.Context, identityID uuid.UUID) (store.ManagedIdentity, error)
+	ListManagedIdentities(ctx context.Context, filter store.ListFilter, pageSize int32, cursor *store.PageCursor) (store.ListResult, error)
+	InsertServiceIdentity(ctx context.Context, zitiIdentityID string, serviceType store.ServiceType, leaseExpiresAt time.Time) error
+	ExtendServiceIdentityLease(ctx context.Context, zitiIdentityID string, leaseExpiresAt time.Time) error
+}
+
+type zitiClient interface {
+	CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (string, string, error)
+	CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, error)
+	CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uuid.UUID, roleAttributes []string) (string, []byte, error)
+	CreateAndEnrollServiceIdentity(ctx context.Context, name string, roleAttributes []string) (string, []byte, error)
+	CreateService(ctx context.Context, name string, roleAttributes []string) (string, error)
+	CreateServiceWithConfigs(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData) (string, error)
+	CreateServicePolicy(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string) (string, error)
+	CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error)
+	DeleteIdentity(ctx context.Context, zitiIdentityID string) error
+	DeleteService(ctx context.Context, serviceID string) error
+	DeleteServicePolicy(ctx context.Context, policyID string) error
+}
+
 type Server struct {
 	zitimanagementv1.UnimplementedZitiManagementServiceServer
-	store                   *store.Store
-	ziti                    *ziti.Client
+	store                   managedIdentityStore
+	ziti                    zitiClient
 	serviceIdentityLeaseTTL time.Duration
 }
 
-func New(store *store.Store, zitiClient *ziti.Client, serviceIdentityLeaseTTL time.Duration) *Server {
+func (s *Server) cleanupZitiIdentity(ctx context.Context, zitiID, label string) {
+	if err := s.ziti.DeleteIdentity(ctx, zitiID); err != nil && !errors.Is(err, ziti.ErrIdentityNotFound) {
+		log.Printf("failed to cleanup %s %s: %v", label, zitiID, err)
+	}
+}
+
+func New(store managedIdentityStore, zitiClient zitiClient, serviceIdentityLeaseTTL time.Duration) *Server {
 	return &Server{store: store, ziti: zitiClient, serviceIdentityLeaseTTL: serviceIdentityLeaseTTL}
 }
 
@@ -47,10 +78,7 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 		IdentityType:   store.IdentityTypeAgent,
 	}
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
-		cleanupErr := s.ziti.DeleteIdentity(ctx, zitiID)
-		if cleanupErr != nil && !errors.Is(cleanupErr, ziti.ErrIdentityNotFound) {
-			log.Printf("failed to cleanup ziti identity %s: %v", zitiID, cleanupErr)
-		}
+		s.cleanupZitiIdentity(ctx, zitiID, "ziti identity")
 		return nil, status.Errorf(codes.Internal, "insert managed identity: %v", err)
 	}
 
@@ -81,11 +109,12 @@ func (s *Server) CreateAppIdentity(ctx context.Context, req *zitimanagementv1.Cr
 		IdentityID:     appID,
 		IdentityType:   store.IdentityTypeApp,
 	}
+	if err := s.store.DeleteManagedIdentityByIdentityID(ctx, appID); err != nil {
+		s.cleanupZitiIdentity(ctx, zitiID, "ziti identity")
+		return nil, status.Errorf(codes.Internal, "delete managed identity: %v", err)
+	}
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
-		cleanupErr := s.ziti.DeleteIdentity(ctx, zitiID)
-		if cleanupErr != nil && !errors.Is(cleanupErr, ziti.ErrIdentityNotFound) {
-			log.Printf("failed to cleanup ziti identity %s: %v", zitiID, cleanupErr)
-		}
+		s.cleanupZitiIdentity(ctx, zitiID, "ziti identity")
 		return nil, status.Errorf(codes.Internal, "insert managed identity: %v", err)
 	}
 
@@ -152,11 +181,12 @@ func (s *Server) CreateRunnerIdentity(ctx context.Context, req *zitimanagementv1
 		IdentityID:     runnerID,
 		IdentityType:   store.IdentityTypeRunner,
 	}
+	if err := s.store.DeleteManagedIdentityByIdentityID(ctx, runnerID); err != nil {
+		s.cleanupZitiIdentity(ctx, zitiID, "runner identity")
+		return nil, status.Errorf(codes.Internal, "delete managed identity: %v", err)
+	}
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
-		cleanupErr := s.ziti.DeleteIdentity(ctx, zitiID)
-		if cleanupErr != nil && !errors.Is(cleanupErr, ziti.ErrIdentityNotFound) {
-			log.Printf("failed to cleanup runner identity %s: %v", zitiID, cleanupErr)
-		}
+		s.cleanupZitiIdentity(ctx, zitiID, "runner identity")
 		return nil, status.Errorf(codes.Internal, "insert managed identity: %v", err)
 	}
 
@@ -283,10 +313,7 @@ func (s *Server) RequestServiceIdentity(ctx context.Context, req *zitimanagement
 
 	leaseExpiresAt := time.Now().Add(s.serviceIdentityLeaseTTL)
 	if err := s.store.InsertServiceIdentity(ctx, zitiID, serviceType, leaseExpiresAt); err != nil {
-		cleanupErr := s.ziti.DeleteIdentity(ctx, zitiID)
-		if cleanupErr != nil && !errors.Is(cleanupErr, ziti.ErrIdentityNotFound) {
-			log.Printf("failed to cleanup ziti identity %s: %v", zitiID, cleanupErr)
-		}
+		s.cleanupZitiIdentity(ctx, zitiID, "service identity")
 		return nil, status.Errorf(codes.Internal, "insert service identity: %v", err)
 	}
 
