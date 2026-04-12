@@ -111,6 +111,7 @@ func (f *fakeServicePolicyService) DeleteServicePolicy(params *service_policy.De
 func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 	ctx := context.Background()
 	agentID := uuid.New()
+	workloadID := uuid.New()
 	createdID := "created-id"
 	jwt := "jwt-token"
 
@@ -120,7 +121,8 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 			return nil, nil
 		},
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			assertCreateExternalID(t, params, agentID)
+			assertCreateExternalID(t, params, workloadID)
+			assertCreateAgentRoleAttributes(t, params, agentID, workloadID)
 			return createIdentityResponse(createdID), nil
 		},
 		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
@@ -132,7 +134,7 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 	}
 
 	client := &Client{identity: fake}
-	zitiID, token, err := client.CreateAgentIdentity(ctx, agentID)
+	zitiID, token, err := client.CreateAgentIdentity(ctx, agentID, workloadID)
 	if err != nil {
 		t.Fatalf("create agent identity: %v", err)
 	}
@@ -147,12 +149,14 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 func TestCreateAgentIdentityCreateFailure(t *testing.T) {
 	ctx := context.Background()
 	agentID := uuid.New()
+	workloadID := uuid.New()
 	createErr := errors.New("create failed")
 	var detailCalled bool
 
 	fake := &fakeIdentityService{
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			assertCreateExternalID(t, params, agentID)
+			assertCreateExternalID(t, params, workloadID)
+			assertCreateAgentRoleAttributes(t, params, agentID, workloadID)
 			return nil, createErr
 		},
 		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
@@ -162,7 +166,7 @@ func TestCreateAgentIdentityCreateFailure(t *testing.T) {
 	}
 
 	client := &Client{identity: fake}
-	_, _, err := client.CreateAgentIdentity(ctx, agentID)
+	_, _, err := client.CreateAgentIdentity(ctx, agentID, workloadID)
 	if err == nil {
 		t.Fatalf("expected create error")
 	}
@@ -536,13 +540,28 @@ func TestCreateDeviceIdentityCreateFailure(t *testing.T) {
 	}
 }
 
-func assertCreateExternalID(t *testing.T, params *identity.CreateIdentityParams, agentID uuid.UUID) {
+func assertCreateExternalID(t *testing.T, params *identity.CreateIdentityParams, expectedID uuid.UUID) {
 	t.Helper()
 	if params == nil || params.Identity == nil || params.Identity.ExternalID == nil {
 		t.Fatalf("expected create identity external id")
 	}
-	if *params.Identity.ExternalID != agentID.String() {
-		t.Fatalf("expected external id %q, got %q", agentID.String(), *params.Identity.ExternalID)
+	if *params.Identity.ExternalID != expectedID.String() {
+		t.Fatalf("expected external id %q, got %q", expectedID.String(), *params.Identity.ExternalID)
+	}
+}
+
+func assertCreateAgentRoleAttributes(t *testing.T, params *identity.CreateIdentityParams, agentID, workloadID uuid.UUID) {
+	t.Helper()
+	if params == nil || params.Identity == nil || params.Identity.RoleAttributes == nil {
+		t.Fatalf("expected create identity role attributes")
+	}
+	expectedRoleAttributes := rest_model.Attributes{
+		roleAttributeAgents,
+		"agent-" + agentID.String(),
+		"workload-" + workloadID.String(),
+	}
+	if !reflect.DeepEqual(*params.Identity.RoleAttributes, expectedRoleAttributes) {
+		t.Fatalf("unexpected role attributes: %#v", params.Identity.RoleAttributes)
 	}
 }
 

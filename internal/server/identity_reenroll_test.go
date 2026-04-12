@@ -71,7 +71,7 @@ type fakeZitiClient struct {
 	deleteIdentityIDs []string
 }
 
-func (f *fakeZitiClient) CreateAgentIdentity(_ context.Context, _ uuid.UUID) (string, string, error) {
+func (f *fakeZitiClient) CreateAgentIdentity(_ context.Context, _, _ uuid.UUID) (string, string, error) {
 	return "", "", errors.New("unexpected create agent identity")
 }
 

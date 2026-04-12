@@ -327,15 +327,16 @@ func (c *Client) listIdentityIDsByExternalID(ctx context.Context, externalID str
 	}
 }
 
-func (c *Client) CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (string, string, error) {
+func (c *Client) CreateAgentIdentity(ctx context.Context, agentID, workloadID uuid.UUID) (string, string, error) {
 	name := fmt.Sprintf("agent-%s-%s", agentID.String(), id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
 	roleAttrs := rest_model.Attributes{
 		roleAttributeAgents,
 		fmt.Sprintf("agent-%s", agentID.String()),
+		fmt.Sprintf("workload-%s", workloadID.String()),
 	}
-	externalID := agentID.String()
+	externalID := workloadID.String()
 	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
 		Type:           &identityType,
