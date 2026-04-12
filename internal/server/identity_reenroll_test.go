@@ -69,10 +69,22 @@ type fakeZitiClient struct {
 	appCount          int
 	runnerCount       int
 	deleteIdentityIDs []string
+	agentCalls        []agentCall
+	createAgentErr    error
 }
 
-func (f *fakeZitiClient) CreateAgentIdentity(_ context.Context, _, _ uuid.UUID) (string, string, error) {
-	return "", "", errors.New("unexpected create agent identity")
+type agentCall struct {
+	agentID    uuid.UUID
+	workloadID uuid.UUID
+}
+
+func (f *fakeZitiClient) CreateAgentIdentity(_ context.Context, agentID, workloadID uuid.UUID) (string, string, error) {
+	call := agentCall{agentID: agentID, workloadID: workloadID}
+	f.agentCalls = append(f.agentCalls, call)
+	if f.createAgentErr != nil {
+		return "", "", f.createAgentErr
+	}
+	return fmt.Sprintf("agent-ziti-%d", len(f.agentCalls)), fmt.Sprintf("agent-jwt-%d", len(f.agentCalls)), nil
 }
 
 func (f *fakeZitiClient) CreateAndEnrollAppIdentity(_ context.Context, _ uuid.UUID, _ string) (string, []byte, error) {
@@ -263,5 +275,46 @@ func TestCreateRunnerIdentityDeleteFailureCleansUp(t *testing.T) {
 	}
 	if len(storeClient.managed) != 0 {
 		t.Fatalf("expected no managed identities persisted")
+	}
+}
+
+func TestCreateAgentIdentityStoresWorkloadID(t *testing.T) {
+	ctx := context.Background()
+	agentID := uuid.New()
+	workloadID := uuid.New()
+	storeClient := newFakeManagedIdentityStore()
+	zitiClient := &fakeZitiClient{}
+	server := New(storeClient, zitiClient, time.Minute)
+
+	request := &zitimanagementv1.CreateAgentIdentityRequest{
+		AgentId:    agentID.String(),
+		WorkloadId: workloadID.String(),
+	}
+
+	resp, err := server.CreateAgentIdentity(ctx, request)
+	if err != nil {
+		t.Fatalf("create agent identity: %v", err)
+	}
+	if resp.GetZitiIdentityId() != "agent-ziti-1" {
+		t.Fatalf("expected agent-ziti-1, got %q", resp.GetZitiIdentityId())
+	}
+	if len(zitiClient.agentCalls) != 1 {
+		t.Fatalf("expected 1 agent call, got %d", len(zitiClient.agentCalls))
+	}
+	if zitiClient.agentCalls[0].agentID != agentID {
+		t.Fatalf("expected agent id %s, got %s", agentID, zitiClient.agentCalls[0].agentID)
+	}
+	if zitiClient.agentCalls[0].workloadID != workloadID {
+		t.Fatalf("expected workload id %s, got %s", workloadID, zitiClient.agentCalls[0].workloadID)
+	}
+	stored, ok := storeClient.managed[agentID]
+	if !ok {
+		t.Fatalf("expected managed identity for %s", agentID)
+	}
+	if stored.WorkloadID == nil {
+		t.Fatalf("expected workload id to be stored")
+	}
+	if *stored.WorkloadID != workloadID {
+		t.Fatalf("expected workload id %s, got %s", workloadID, *stored.WorkloadID)
 	}
 }

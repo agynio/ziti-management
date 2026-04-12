@@ -80,6 +80,7 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 	identity := store.ManagedIdentity{
 		ZitiIdentityID: zitiID,
 		IdentityID:     agentID,
+		WorkloadID:     &workloadID,
 		IdentityType:   store.IdentityTypeAgent,
 	}
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
@@ -498,10 +499,15 @@ func (s *Server) ResolveIdentity(ctx context.Context, req *zitimanagementv1.Reso
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "identity_type: %v", err)
 	}
-	return &zitimanagementv1.ResolveIdentityResponse{
+	resp := &zitimanagementv1.ResolveIdentityResponse{
 		IdentityId:   identity.IdentityID.String(),
 		IdentityType: identityType,
-	}, nil
+	}
+	if identity.WorkloadID != nil {
+		workloadID := identity.WorkloadID.String()
+		resp.WorkloadId = &workloadID
+	}
+	return resp, nil
 }
 
 func (s *Server) resolveManagedIdentity(ctx context.Context, zitiID string) (store.ManagedIdentity, error) {
