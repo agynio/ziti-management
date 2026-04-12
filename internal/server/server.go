@@ -490,7 +490,7 @@ func (s *Server) ResolveIdentity(ctx context.Context, req *zitimanagementv1.Reso
 	if zitiID == "" {
 		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
 	}
-	identity, err := s.resolveManagedIdentity(ctx, zitiID)
+	identity, err := s.store.ResolveIdentity(ctx, zitiID)
 	if err != nil {
 		return nil, toStatusError(err)
 	}
@@ -502,25 +502,6 @@ func (s *Server) ResolveIdentity(ctx context.Context, req *zitimanagementv1.Reso
 		IdentityId:   identity.IdentityID.String(),
 		IdentityType: identityType,
 	}, nil
-}
-
-func (s *Server) resolveManagedIdentity(ctx context.Context, zitiID string) (store.ManagedIdentity, error) {
-	if identityID, ok := parseManagedIdentityID(zitiID); ok {
-		return s.store.ResolveIdentityByIdentityID(ctx, identityID)
-	}
-	return s.store.ResolveIdentity(ctx, zitiID)
-}
-
-func parseManagedIdentityID(value string) (uuid.UUID, bool) {
-	const agentPrefix = "agent-"
-	const uuidLength = 36
-	if strings.HasPrefix(value, agentPrefix) && len(value) >= len(agentPrefix)+uuidLength {
-		candidate := value[len(agentPrefix) : len(agentPrefix)+uuidLength]
-		if identityID, err := uuid.Parse(candidate); err == nil {
-			return identityID, true
-		}
-	}
-	return uuid.UUID{}, false
 }
 
 func toStatusError(err error) error {
