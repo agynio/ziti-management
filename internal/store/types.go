@@ -31,6 +31,7 @@ const (
 type ManagedIdentity struct {
 	ZitiIdentityID string
 	IdentityID     uuid.UUID
+	WorkloadID     *uuid.UUID
 	IdentityType   IdentityType
 	ZitiServiceID  *string
 	CreatedAt      time.Time
