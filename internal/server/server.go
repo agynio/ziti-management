@@ -31,7 +31,7 @@ type managedIdentityStore interface {
 }
 
 type zitiClient interface {
-	CreateAgentIdentity(ctx context.Context, agentID uuid.UUID) (string, string, error)
+	CreateAgentIdentity(ctx context.Context, agentID, workloadID uuid.UUID) (string, string, error)
 	CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, error)
 	CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uuid.UUID, roleAttributes []string) (string, []byte, error)
 	CreateAndEnrollServiceIdentity(ctx context.Context, name string, roleAttributes []string) (string, []byte, error)
@@ -67,7 +67,12 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 		return nil, status.Errorf(codes.InvalidArgument, "agent_id: %v", err)
 	}
 
-	zitiID, jwt, err := s.ziti.CreateAgentIdentity(ctx, agentID)
+	workloadID, err := parseUUID(req.GetWorkloadId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "workload_id: %v", err)
+	}
+
+	zitiID, jwt, err := s.ziti.CreateAgentIdentity(ctx, agentID, workloadID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create ziti identity: %v", err)
 	}
