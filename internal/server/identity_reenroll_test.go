@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,8 +15,9 @@ import (
 )
 
 type fakeManagedIdentityStore struct {
-	managed     map[uuid.UUID]store.ManagedIdentity
-	deleteCalls []uuid.UUID
+	managed               map[uuid.UUID]store.ManagedIdentity
+	deleteCalls           []uuid.UUID
+	deleteByIdentityIDErr error
 }
 
 func newFakeManagedIdentityStore() *fakeManagedIdentityStore {
@@ -35,8 +37,11 @@ func (f *fakeManagedIdentityStore) DeleteManagedIdentity(_ context.Context, _ st
 }
 
 func (f *fakeManagedIdentityStore) DeleteManagedIdentityByIdentityID(_ context.Context, identityID uuid.UUID) error {
-	delete(f.managed, identityID)
 	f.deleteCalls = append(f.deleteCalls, identityID)
+	if f.deleteByIdentityIDErr != nil {
+		return f.deleteByIdentityIDErr
+	}
+	delete(f.managed, identityID)
 	return nil
 }
 
@@ -61,8 +66,9 @@ func (f *fakeManagedIdentityStore) ExtendServiceIdentityLease(_ context.Context,
 }
 
 type fakeZitiClient struct {
-	appCount    int
-	runnerCount int
+	appCount          int
+	runnerCount       int
+	deleteIdentityIDs []string
 }
 
 func (f *fakeZitiClient) CreateAgentIdentity(_ context.Context, _ uuid.UUID) (string, string, error) {
@@ -101,7 +107,8 @@ func (f *fakeZitiClient) CreateDeviceIdentity(_ context.Context, _ uuid.UUID, _ 
 	return "", "", errors.New("unexpected create device identity")
 }
 
-func (f *fakeZitiClient) DeleteIdentity(_ context.Context, _ string) error {
+func (f *fakeZitiClient) DeleteIdentity(_ context.Context, zitiID string) error {
+	f.deleteIdentityIDs = append(f.deleteIdentityIDs, zitiID)
 	return nil
 }
 
@@ -155,6 +162,37 @@ func TestCreateAppIdentityAllowsReenroll(t *testing.T) {
 	}
 }
 
+func TestCreateAppIdentityDeleteFailureCleansUp(t *testing.T) {
+	ctx := context.Background()
+	appID := uuid.New()
+	storeClient := newFakeManagedIdentityStore()
+	storeClient.deleteByIdentityIDErr = errors.New("delete failed")
+	zitiClient := &fakeZitiClient{}
+	server := New(storeClient, zitiClient, time.Minute)
+
+	request := &zitimanagementv1.CreateAppIdentityRequest{
+		IdentityId: appID.String(),
+		Slug:       "app-slug",
+	}
+
+	_, err := server.CreateAppIdentity(ctx, request)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "delete managed identity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(zitiClient.deleteIdentityIDs) != 1 {
+		t.Fatalf("expected 1 cleanup call, got %d", len(zitiClient.deleteIdentityIDs))
+	}
+	if zitiClient.deleteIdentityIDs[0] != "app-ziti-1" {
+		t.Fatalf("expected cleanup for app-ziti-1, got %s", zitiClient.deleteIdentityIDs[0])
+	}
+	if len(storeClient.managed) != 0 {
+		t.Fatalf("expected no managed identities persisted")
+	}
+}
+
 func TestCreateRunnerIdentityAllowsReenroll(t *testing.T) {
 	ctx := context.Background()
 	runnerID := uuid.New()
@@ -194,5 +232,36 @@ func TestCreateRunnerIdentityAllowsReenroll(t *testing.T) {
 	}
 	if firstResp.GetZitiIdentityId() == secondResp.GetZitiIdentityId() {
 		t.Fatalf("expected distinct ziti ids for reenroll")
+	}
+}
+
+func TestCreateRunnerIdentityDeleteFailureCleansUp(t *testing.T) {
+	ctx := context.Background()
+	runnerID := uuid.New()
+	storeClient := newFakeManagedIdentityStore()
+	storeClient.deleteByIdentityIDErr = errors.New("delete failed")
+	zitiClient := &fakeZitiClient{}
+	server := New(storeClient, zitiClient, time.Minute)
+
+	request := &zitimanagementv1.CreateRunnerIdentityRequest{
+		RunnerId:       runnerID.String(),
+		RoleAttributes: []string{"runner"},
+	}
+
+	_, err := server.CreateRunnerIdentity(ctx, request)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "delete managed identity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(zitiClient.deleteIdentityIDs) != 1 {
+		t.Fatalf("expected 1 cleanup call, got %d", len(zitiClient.deleteIdentityIDs))
+	}
+	if zitiClient.deleteIdentityIDs[0] != "runner-ziti-1" {
+		t.Fatalf("expected cleanup for runner-ziti-1, got %s", zitiClient.deleteIdentityIDs[0])
+	}
+	if len(storeClient.managed) != 0 {
+		t.Fatalf("expected no managed identities persisted")
 	}
 }
