@@ -44,6 +44,14 @@ func (s *Store) DeleteManagedIdentity(ctx context.Context, zitiIdentityID string
 	return nil
 }
 
+func (s *Store) DeleteManagedIdentityByIdentityID(ctx context.Context, identityID uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM managed_identities WHERE identity_id = $1`, identityID)
+	if err != nil {
+		return fmt.Errorf("delete managed identity by identity id: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) ResolveIdentity(ctx context.Context, zitiIdentityID string) (ManagedIdentity, error) {
 	row := s.pool.QueryRow(ctx, `SELECT identity_id, identity_type, ziti_service_id, created_at FROM managed_identities WHERE ziti_identity_id = $1`, zitiIdentityID)
 	identity := ManagedIdentity{ZitiIdentityID: zitiIdentityID}
