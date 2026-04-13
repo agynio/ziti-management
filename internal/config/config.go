@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -14,6 +15,7 @@ type Config struct {
 	ZitiKeyFile               string
 	ZitiCAFile                string
 	ZitiEnrollmentJWTFile     string
+	ZitiIdentityNameResolve   bool
 	ServiceIdentityLeaseTTL   time.Duration
 	ServiceIdentityGCInterval time.Duration
 }
@@ -45,6 +47,11 @@ func FromEnv() (Config, error) {
 		return Config{}, fmt.Errorf("ZITI_CA_FILE must be set")
 	}
 	cfg.ZitiEnrollmentJWTFile = os.Getenv("ZITI_ENROLLMENT_JWT_FILE")
+	resolveByName, err := boolFromEnv("ZITI_IDENTITY_NAME_RESOLVE", false)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.ZitiIdentityNameResolve = resolveByName
 	leaseTTL, err := durationFromEnv("SERVICE_IDENTITY_LEASE_TTL", 5*time.Minute)
 	if err != nil {
 		return Config{}, err
@@ -69,6 +76,18 @@ func durationFromEnv(key string, defaultValue time.Duration) (time.Duration, err
 	}
 	if parsed <= 0 {
 		return 0, fmt.Errorf("%s must be greater than 0", key)
+	}
+	return parsed, nil
+}
+
+func boolFromEnv(key string, defaultValue bool) (bool, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a valid boolean: %w", key, err)
 	}
 	return parsed, nil
 }
