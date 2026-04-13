@@ -62,7 +62,7 @@ func run() error {
 
 	storeClient := store.NewStore(pool)
 	grpcServer := grpc.NewServer()
-	zitimanagementv1.RegisterZitiManagementServiceServer(grpcServer, server.New(storeClient, zitiClient, cfg.ServiceIdentityLeaseTTL))
+	zitimanagementv1.RegisterZitiManagementServiceServer(grpcServer, server.New(storeClient, zitiClient, cfg.ServiceIdentityLeaseTTL, cfg.ZitiIdentityNameResolve))
 
 	lis, err := net.Listen("tcp", cfg.GRPCAddress)
 	if err != nil {

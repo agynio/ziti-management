@@ -49,6 +49,7 @@ type Server struct {
 	store                   managedIdentityStore
 	ziti                    zitiClient
 	serviceIdentityLeaseTTL time.Duration
+	resolveIdentityName     bool
 }
 
 func (s *Server) cleanupZitiIdentity(ctx context.Context, zitiID, label string) {
@@ -57,8 +58,13 @@ func (s *Server) cleanupZitiIdentity(ctx context.Context, zitiID, label string) 
 	}
 }
 
-func New(store managedIdentityStore, zitiClient zitiClient, serviceIdentityLeaseTTL time.Duration) *Server {
-	return &Server{store: store, ziti: zitiClient, serviceIdentityLeaseTTL: serviceIdentityLeaseTTL}
+func New(store managedIdentityStore, zitiClient zitiClient, serviceIdentityLeaseTTL time.Duration, resolveIdentityName bool) *Server {
+	return &Server{
+		store:                   store,
+		ziti:                    zitiClient,
+		serviceIdentityLeaseTTL: serviceIdentityLeaseTTL,
+		resolveIdentityName:     resolveIdentityName,
+	}
 }
 
 func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.CreateAgentIdentityRequest) (*zitimanagementv1.CreateAgentIdentityResponse, error) {
@@ -493,8 +499,44 @@ func (s *Server) ResolveIdentity(ctx context.Context, req *zitimanagementv1.Reso
 	}
 	identity, err := s.store.ResolveIdentity(ctx, zitiID)
 	if err != nil {
+		if s.resolveIdentityName && errors.Is(err, store.ErrManagedIdentityNotFound) {
+			agentID, ok := parseAgentIdentityName(zitiID)
+			if ok {
+				identity, err = s.store.ResolveIdentityByIdentityID(ctx, agentID)
+				if err != nil {
+					return nil, toStatusError(err)
+				}
+				return resolveIdentityResponse(identity)
+			}
+		}
 		return nil, toStatusError(err)
 	}
+	return resolveIdentityResponse(identity)
+}
+
+const agentIdentityNamePrefix = "agent-"
+const agentIdentityUUIDLength = 36
+
+func parseAgentIdentityName(value string) (uuid.UUID, bool) {
+	if !strings.HasPrefix(value, agentIdentityNamePrefix) {
+		return uuid.UUID{}, false
+	}
+	trimmed := value[len(agentIdentityNamePrefix):]
+	if len(trimmed) < agentIdentityUUIDLength {
+		return uuid.UUID{}, false
+	}
+	candidate := trimmed[:agentIdentityUUIDLength]
+	if len(trimmed) > agentIdentityUUIDLength && trimmed[agentIdentityUUIDLength] != '-' {
+		return uuid.UUID{}, false
+	}
+	agentID, err := uuid.Parse(candidate)
+	if err != nil {
+		return uuid.UUID{}, false
+	}
+	return agentID, true
+}
+
+func resolveIdentityResponse(identity store.ManagedIdentity) (*zitimanagementv1.ResolveIdentityResponse, error) {
 	identityType, err := toProtoIdentityType(identity.IdentityType)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "identity_type: %v", err)

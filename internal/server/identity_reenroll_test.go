@@ -137,7 +137,7 @@ func TestCreateAppIdentityAllowsReenroll(t *testing.T) {
 	appID := uuid.New()
 	storeClient := newFakeManagedIdentityStore()
 	zitiClient := &fakeZitiClient{}
-	server := New(storeClient, zitiClient, time.Minute)
+	server := New(storeClient, zitiClient, time.Minute, false)
 
 	request := &zitimanagementv1.CreateAppIdentityRequest{
 		IdentityId: appID.String(),
@@ -180,7 +180,7 @@ func TestCreateAppIdentityDeleteFailureCleansUp(t *testing.T) {
 	storeClient := newFakeManagedIdentityStore()
 	storeClient.deleteByIdentityIDErr = errors.New("delete failed")
 	zitiClient := &fakeZitiClient{}
-	server := New(storeClient, zitiClient, time.Minute)
+	server := New(storeClient, zitiClient, time.Minute, false)
 
 	request := &zitimanagementv1.CreateAppIdentityRequest{
 		IdentityId: appID.String(),
@@ -210,7 +210,7 @@ func TestCreateRunnerIdentityAllowsReenroll(t *testing.T) {
 	runnerID := uuid.New()
 	storeClient := newFakeManagedIdentityStore()
 	zitiClient := &fakeZitiClient{}
-	server := New(storeClient, zitiClient, time.Minute)
+	server := New(storeClient, zitiClient, time.Minute, false)
 
 	request := &zitimanagementv1.CreateRunnerIdentityRequest{
 		RunnerId:       runnerID.String(),
@@ -253,7 +253,7 @@ func TestCreateRunnerIdentityDeleteFailureCleansUp(t *testing.T) {
 	storeClient := newFakeManagedIdentityStore()
 	storeClient.deleteByIdentityIDErr = errors.New("delete failed")
 	zitiClient := &fakeZitiClient{}
-	server := New(storeClient, zitiClient, time.Minute)
+	server := New(storeClient, zitiClient, time.Minute, false)
 
 	request := &zitimanagementv1.CreateRunnerIdentityRequest{
 		RunnerId:       runnerID.String(),
@@ -284,7 +284,7 @@ func TestCreateAgentIdentityStoresWorkloadID(t *testing.T) {
 	workloadID := uuid.New()
 	storeClient := newFakeManagedIdentityStore()
 	zitiClient := &fakeZitiClient{}
-	server := New(storeClient, zitiClient, time.Minute)
+	server := New(storeClient, zitiClient, time.Minute, false)
 
 	request := &zitimanagementv1.CreateAgentIdentityRequest{
 		AgentId:    agentID.String(),
