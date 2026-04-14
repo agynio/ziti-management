@@ -49,7 +49,9 @@ type serviceService interface {
 
 type configService interface {
 	CreateConfig(params *config.CreateConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.CreateConfigCreated, error)
+	CreateConfigType(params *config.CreateConfigTypeParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.CreateConfigTypeCreated, error)
 	DeleteConfig(params *config.DeleteConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.DeleteConfigOK, error)
+	ListConfigTypes(params *config.ListConfigTypesParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.ListConfigTypesOK, error)
 }
 
 type servicePolicyService interface {
@@ -58,16 +60,18 @@ type servicePolicyService interface {
 }
 
 type Client struct {
-	mu               sync.Mutex
-	identity         identityService
-	service          serviceService
-	config           configService
-	servicePolicy    servicePolicyService
-	controllerURL    string
-	certFile         string
-	keyFile          string
-	caFile           string
-	reauthenticateFn func() error
+	mu                sync.Mutex
+	identity          identityService
+	service           serviceService
+	config            configService
+	servicePolicy     servicePolicyService
+	controllerURL     string
+	certFile          string
+	keyFile           string
+	caFile            string
+	reauthenticateFn  func() error
+	configTypeIDs     map[string]string
+	configTypesLoaded bool
 }
 
 func NewClient(controllerURL, certFile, keyFile, caFile string) (*Client, error) {
@@ -400,7 +404,7 @@ func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, role
 			"address":  hostV1.Address,
 			"port":     hostV1.Port,
 		}
-		configID, err := c.createConfig(ctx, "host.v1", fmt.Sprintf("%s-host-v1", name), data)
+		configID, err := c.createConfig(ctx, hostV1ConfigType, fmt.Sprintf("%s-host-v1", name), data)
 		if err != nil {
 			return "", err
 		}
@@ -419,7 +423,7 @@ func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, role
 			"addresses":  interceptV1.Addresses,
 			"portRanges": portRanges,
 		}
-		configID, err := c.createConfig(ctx, "intercept.v1", fmt.Sprintf("%s-intercept-v1", name), data)
+		configID, err := c.createConfig(ctx, interceptV1ConfigType, fmt.Sprintf("%s-intercept-v1", name), data)
 		if err != nil {
 			return "", c.cleanupConfigs(ctx, configIDs, err)
 		}
@@ -456,7 +460,118 @@ func (c *Client) createService(ctx context.Context, name string, roleAttributes 
 	})
 }
 
-func (c *Client) createConfig(ctx context.Context, configTypeID, name string, data map[string]any) (string, error) {
+func (c *Client) configTypeID(ctx context.Context, name string) (string, error) {
+	if name == "" {
+		return "", errors.New("config type name is empty")
+	}
+	if id, ok, loaded := c.cachedConfigTypeID(name); ok {
+		return id, nil
+	} else if !loaded {
+		if err := c.refreshConfigTypes(ctx); err != nil {
+			return "", err
+		}
+		if id, ok, _ := c.cachedConfigTypeID(name); ok {
+			return id, nil
+		}
+	}
+
+	schema, ok := configTypeSchema(name)
+	if !ok {
+		return "", fmt.Errorf("config type %q not found", name)
+	}
+	if err := c.createConfigType(ctx, name, schema); err != nil {
+		return "", err
+	}
+	if err := c.refreshConfigTypes(ctx); err != nil {
+		return "", err
+	}
+	if id, ok, _ := c.cachedConfigTypeID(name); ok {
+		return id, nil
+	}
+	return "", fmt.Errorf("config type %q not found after create", name)
+}
+
+func (c *Client) cachedConfigTypeID(name string) (string, bool, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.configTypeIDs == nil {
+		return "", false, c.configTypesLoaded
+	}
+	id, ok := c.configTypeIDs[name]
+	return id, ok, c.configTypesLoaded
+}
+
+func (c *Client) refreshConfigTypes(ctx context.Context) error {
+	configTypes, err := c.listConfigTypes(ctx)
+	if err != nil {
+		return err
+	}
+
+	configTypeIDs := make(map[string]string, len(configTypes))
+	for _, configType := range configTypes {
+		if configType == nil || configType.Name == nil || configType.ID == nil {
+			continue
+		}
+		configTypeIDs[*configType.Name] = *configType.ID
+	}
+
+	c.mu.Lock()
+	c.configTypeIDs = configTypeIDs
+	c.configTypesLoaded = true
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *Client) listConfigTypes(ctx context.Context) ([]*rest_model.ConfigTypeDetail, error) {
+	params := config.NewListConfigTypesParamsWithContext(ctx)
+	var payload *rest_model.ListConfigTypesEnvelope
+	err := c.withReauth(func() error {
+		configClient := c.configClient()
+		listed, callErr := configClient.ListConfigTypes(params, nil)
+		if callErr != nil {
+			return callErr
+		}
+		if listed == nil {
+			payload = nil
+			return nil
+		}
+		payload = listed.Payload
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list ziti config types: %w", err)
+	}
+	if payload == nil {
+		return nil, errors.New("list ziti config types response missing data")
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) createConfigType(ctx context.Context, name string, schema json.RawMessage) error {
+	params := config.NewCreateConfigTypeParamsWithContext(ctx)
+	params.ConfigType = &rest_model.ConfigTypeCreate{
+		Name:   &name,
+		Schema: schema,
+	}
+	_, err := c.createWithReauth("config type", func() (*rest_model.CreateEnvelope, error) {
+		configClient := c.configClient()
+		created, callErr := configClient.CreateConfigType(params, nil)
+		if callErr != nil {
+			return nil, callErr
+		}
+		if created == nil {
+			return nil, nil
+		}
+		return created.Payload, nil
+	})
+	return err
+}
+
+func (c *Client) createConfig(ctx context.Context, configTypeName, name string, data map[string]any) (string, error) {
+	configTypeID, err := c.configTypeID(ctx, configTypeName)
+	if err != nil {
+		return "", fmt.Errorf("resolve config type %q: %w", configTypeName, err)
+	}
 	params := config.NewCreateConfigParamsWithContext(ctx)
 	params.Config = &rest_model.ConfigCreate{
 		ConfigTypeID: &configTypeID,

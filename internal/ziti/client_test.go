@@ -71,8 +71,10 @@ func (f *fakeServiceService) DeleteService(params *service.DeleteServiceParams, 
 }
 
 type fakeConfigService struct {
-	createConfigFunc func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error)
-	deleteConfigFunc func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error)
+	createConfigFunc     func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error)
+	createConfigTypeFunc func(params *config.CreateConfigTypeParams) (*config.CreateConfigTypeCreated, error)
+	deleteConfigFunc     func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error)
+	listConfigTypesFunc  func(params *config.ListConfigTypesParams) (*config.ListConfigTypesOK, error)
 }
 
 func (f *fakeConfigService) CreateConfig(params *config.CreateConfigParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.CreateConfigCreated, error) {
@@ -82,11 +84,25 @@ func (f *fakeConfigService) CreateConfig(params *config.CreateConfigParams, _ ru
 	return f.createConfigFunc(params)
 }
 
+func (f *fakeConfigService) CreateConfigType(params *config.CreateConfigTypeParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.CreateConfigTypeCreated, error) {
+	if f.createConfigTypeFunc == nil {
+		return nil, errors.New("create config type not stubbed")
+	}
+	return f.createConfigTypeFunc(params)
+}
+
 func (f *fakeConfigService) DeleteConfig(params *config.DeleteConfigParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.DeleteConfigOK, error) {
 	if f.deleteConfigFunc == nil {
 		return nil, errors.New("delete config not stubbed")
 	}
 	return f.deleteConfigFunc(params)
+}
+
+func (f *fakeConfigService) ListConfigTypes(params *config.ListConfigTypesParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.ListConfigTypesOK, error) {
+	if f.listConfigTypesFunc == nil {
+		return nil, errors.New("list config types not stubbed")
+	}
+	return f.listConfigTypesFunc(params)
 }
 
 type fakeServicePolicyService struct {
@@ -232,6 +248,10 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 			}},
 		}
 		configIDs := []string{"host-config", "intercept-config"}
+		hostTypeID := "host-type-id"
+		interceptTypeID := "intercept-type-id"
+		hostTypeName := hostV1ConfigType
+		interceptTypeName := interceptV1ConfigType
 		serviceID := "service-id"
 		callIndex := 0
 
@@ -250,7 +270,7 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 
 				switch callIndex {
 				case 0:
-					if *params.Config.ConfigTypeID != "host.v1" {
+					if *params.Config.ConfigTypeID != hostTypeID {
 						t.Fatalf("unexpected config type: %s", *params.Config.ConfigTypeID)
 					}
 					if *params.Config.Name != "svc-host-v1" {
@@ -265,7 +285,7 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 						t.Fatalf("unexpected host config data: %#v", data)
 					}
 				case 1:
-					if *params.Config.ConfigTypeID != "intercept.v1" {
+					if *params.Config.ConfigTypeID != interceptTypeID {
 						t.Fatalf("unexpected config type: %s", *params.Config.ConfigTypeID)
 					}
 					if *params.Config.Name != "svc-intercept-v1" {
@@ -288,6 +308,25 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 				configID := configIDs[callIndex]
 				callIndex++
 				return createConfigResponse(configID), nil
+			},
+			createConfigTypeFunc: func(params *config.CreateConfigTypeParams) (*config.CreateConfigTypeCreated, error) {
+				t.Fatalf("create config type should not be called: %#v", params)
+				return nil, nil
+			},
+			listConfigTypesFunc: func(params *config.ListConfigTypesParams) (*config.ListConfigTypesOK, error) {
+				return &config.ListConfigTypesOK{Payload: &rest_model.ListConfigTypesEnvelope{
+					Data: rest_model.ConfigTypeList{
+						{
+							BaseEntity: rest_model.BaseEntity{ID: &hostTypeID},
+							Name:       &hostTypeName,
+						},
+						{
+							BaseEntity: rest_model.BaseEntity{ID: &interceptTypeID},
+							Name:       &interceptTypeName,
+						},
+					},
+					Meta: &rest_model.Meta{},
+				}}, nil
 			},
 		}
 
@@ -326,6 +365,10 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 		serviceErr := errors.New("service create failed")
 		deleted := make([]string, 0, 2)
 		configIDs := []string{"host-config", "intercept-config"}
+		hostTypeID := "host-type-id"
+		interceptTypeID := "intercept-type-id"
+		hostTypeName := hostV1ConfigType
+		interceptTypeName := interceptV1ConfigType
 		callIndex := 0
 
 		fakeConfig := &fakeConfigService{
@@ -334,12 +377,31 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 				callIndex++
 				return createConfigResponse(configID), nil
 			},
+			createConfigTypeFunc: func(params *config.CreateConfigTypeParams) (*config.CreateConfigTypeCreated, error) {
+				t.Fatalf("create config type should not be called: %#v", params)
+				return nil, nil
+			},
 			deleteConfigFunc: func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error) {
 				if params == nil {
 					t.Fatalf("expected delete config params")
 				}
 				deleted = append(deleted, params.ID)
 				return &config.DeleteConfigOK{}, nil
+			},
+			listConfigTypesFunc: func(params *config.ListConfigTypesParams) (*config.ListConfigTypesOK, error) {
+				return &config.ListConfigTypesOK{Payload: &rest_model.ListConfigTypesEnvelope{
+					Data: rest_model.ConfigTypeList{
+						{
+							BaseEntity: rest_model.BaseEntity{ID: &hostTypeID},
+							Name:       &hostTypeName,
+						},
+						{
+							BaseEntity: rest_model.BaseEntity{ID: &interceptTypeID},
+							Name:       &interceptTypeName,
+						},
+					},
+					Meta: &rest_model.Meta{},
+				}}, nil
 			},
 		}
 
