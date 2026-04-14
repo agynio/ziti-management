@@ -250,7 +250,7 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 
 				switch callIndex {
 				case 0:
-					if *params.Config.ConfigTypeID != "host.v1" {
+					if *params.Config.ConfigTypeID != hostV1ConfigTypeID {
 						t.Fatalf("unexpected config type: %s", *params.Config.ConfigTypeID)
 					}
 					if *params.Config.Name != "svc-host-v1" {
@@ -265,7 +265,7 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 						t.Fatalf("unexpected host config data: %#v", data)
 					}
 				case 1:
-					if *params.Config.ConfigTypeID != "intercept.v1" {
+					if *params.Config.ConfigTypeID != interceptV1ConfigTypeID {
 						t.Fatalf("unexpected config type: %s", *params.Config.ConfigTypeID)
 					}
 					if *params.Config.Name != "svc-intercept-v1" {

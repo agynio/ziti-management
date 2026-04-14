@@ -1,5 +1,10 @@
 package ziti
 
+const (
+	hostV1ConfigTypeID      = "NH5p4FpGR"
+	interceptV1ConfigTypeID = "g7cIWbcGg"
+)
+
 type HostV1ConfigData struct {
 	Protocol string
 	Address  string
