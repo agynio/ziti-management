@@ -400,7 +400,7 @@ func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, role
 			"address":  hostV1.Address,
 			"port":     hostV1.Port,
 		}
-		configID, err := c.createConfig(ctx, "host.v1", fmt.Sprintf("%s-host-v1", name), data)
+		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), data)
 		if err != nil {
 			return "", err
 		}
@@ -419,7 +419,7 @@ func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, role
 			"addresses":  interceptV1.Addresses,
 			"portRanges": portRanges,
 		}
-		configID, err := c.createConfig(ctx, "intercept.v1", fmt.Sprintf("%s-intercept-v1", name), data)
+		configID, err := c.createConfig(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), data)
 		if err != nil {
 			return "", c.cleanupConfigs(ctx, configIDs, err)
 		}
