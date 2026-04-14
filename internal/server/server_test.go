@@ -23,6 +23,12 @@ func TestServiceIdentityConfig(t *testing.T) {
 			wantRoles:  []string{"llm-proxy-hosts"},
 		},
 		{
+			name:       "tracing",
+			service:    store.ServiceTypeTracing,
+			wantPrefix: "svc-tracing-",
+			wantRoles:  []string{"tracing-hosts"},
+		},
+		{
 			name:    "unspecified",
 			service: store.ServiceTypeUnspecified,
 			wantErr: "service type unspecified",

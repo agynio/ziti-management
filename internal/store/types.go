@@ -26,6 +26,7 @@ const (
 	ServiceTypeGateway      ServiceType = 1
 	ServiceTypeOrchestrator ServiceType = 2
 	ServiceTypeLLMProxy     ServiceType = 4
+	ServiceTypeTracing      ServiceType = 5
 )
 
 type ManagedIdentity struct {
