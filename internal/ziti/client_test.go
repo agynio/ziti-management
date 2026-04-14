@@ -248,8 +248,8 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 			}},
 		}
 		configIDs := []string{"host-config", "intercept-config"}
-		hostTypeID := "host-type-id"
-		interceptTypeID := "intercept-type-id"
+		hostTypeID := hostV1ConfigTypeID
+		interceptTypeID := interceptV1ConfigTypeID
 		hostTypeName := hostV1ConfigType
 		interceptTypeName := interceptV1ConfigType
 		serviceID := "service-id"
@@ -365,8 +365,8 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 		serviceErr := errors.New("service create failed")
 		deleted := make([]string, 0, 2)
 		configIDs := []string{"host-config", "intercept-config"}
-		hostTypeID := "host-type-id"
-		interceptTypeID := "intercept-type-id"
+		hostTypeID := hostV1ConfigTypeID
+		interceptTypeID := interceptV1ConfigTypeID
 		hostTypeName := hostV1ConfigType
 		interceptTypeName := interceptV1ConfigType
 		callIndex := 0

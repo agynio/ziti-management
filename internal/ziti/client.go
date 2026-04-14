@@ -465,14 +465,17 @@ func (c *Client) configTypeID(ctx context.Context, name string) (string, error) 
 		return "", errors.New("config type name is empty")
 	}
 	if id, ok, loaded := c.cachedConfigTypeID(name); ok {
-		return id, nil
+		return normalizeConfigTypeID(name, id), nil
 	} else if !loaded {
 		if err := c.refreshConfigTypes(ctx); err != nil {
 			return "", err
 		}
 		if id, ok, _ := c.cachedConfigTypeID(name); ok {
-			return id, nil
+			return normalizeConfigTypeID(name, id), nil
 		}
+	}
+	if knownID, ok := knownConfigTypeID(name); ok {
+		return knownID, nil
 	}
 
 	schema, ok := configTypeSchema(name)
@@ -486,7 +489,7 @@ func (c *Client) configTypeID(ctx context.Context, name string) (string, error) 
 		return "", err
 	}
 	if id, ok, _ := c.cachedConfigTypeID(name); ok {
-		return id, nil
+		return normalizeConfigTypeID(name, id), nil
 	}
 	return "", fmt.Errorf("config type %q not found after create", name)
 }
