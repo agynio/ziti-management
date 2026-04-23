@@ -69,6 +69,7 @@ type fakeZitiClient struct {
 	appCount          int
 	runnerCount       int
 	deleteIdentityIDs []string
+	deleteServiceIDs  []string
 	agentCalls        []agentCall
 	createAgentErr    error
 }
@@ -124,7 +125,8 @@ func (f *fakeZitiClient) DeleteIdentity(_ context.Context, zitiID string) error 
 	return nil
 }
 
-func (f *fakeZitiClient) DeleteService(_ context.Context, _ string) error {
+func (f *fakeZitiClient) DeleteService(_ context.Context, serviceID string) error {
+	f.deleteServiceIDs = append(f.deleteServiceIDs, serviceID)
 	return nil
 }
 
