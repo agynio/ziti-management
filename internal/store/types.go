@@ -27,6 +27,7 @@ const (
 	ServiceTypeOrchestrator ServiceType = 2
 	ServiceTypeLLMProxy     ServiceType = 4
 	ServiceTypeTracing      ServiceType = 5
+	ServiceTypeRunners      ServiceType = 6
 )
 
 type ManagedIdentity struct {
