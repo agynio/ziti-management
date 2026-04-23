@@ -304,8 +304,7 @@ func (s *Server) DeleteAppIdentity(ctx context.Context, req *zitimanagementv1.De
 		if identityFound {
 			return nil, status.Errorf(codes.Internal, "managed identity %s missing ziti service id", identity.ZitiIdentityID)
 		}
-		log.Printf("app identity %s missing ziti service id", appID)
-		return &zitimanagementv1.DeleteAppIdentityResponse{}, nil
+		return nil, status.Error(codes.InvalidArgument, "ziti_service_id is required when managed identity is missing")
 	}
 	if err := s.ziti.DeleteService(ctx, zitiServiceID); err != nil {
 		if errors.Is(err, ziti.ErrServiceNotFound) {

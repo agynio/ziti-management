@@ -9,6 +9,8 @@ import (
 	zitimanagementv1 "github.com/agynio/ziti-management/.gen/go/agynio/api/ziti_management/v1"
 	"github.com/agynio/ziti-management/internal/store"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type deleteAppIdentityStore struct {
@@ -124,5 +126,23 @@ func TestDeleteAppIdentityUsesStoredServiceID(t *testing.T) {
 	}
 	if zitiClient.deleteServiceIDs[0] != serviceID {
 		t.Fatalf("expected service delete %q, got %q", serviceID, zitiClient.deleteServiceIDs[0])
+	}
+}
+
+func TestDeleteAppIdentityRequiresServiceIDWithoutMapping(t *testing.T) {
+	ctx := context.Background()
+	appID := uuid.New()
+	storeClient := &deleteAppIdentityStore{resolveErr: store.ErrManagedIdentityNotFound}
+	zitiClient := &fakeZitiClient{}
+	server := New(storeClient, zitiClient, time.Minute, false)
+
+	_, err := server.DeleteAppIdentity(ctx, &zitimanagementv1.DeleteAppIdentityRequest{
+		IdentityId: appID.String(),
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected invalid argument error, got %v", err)
+	}
+	if len(zitiClient.deleteServiceIDs) != 0 {
+		t.Fatalf("expected no service delete calls, got %d", len(zitiClient.deleteServiceIDs))
 	}
 }
