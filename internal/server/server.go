@@ -272,29 +272,40 @@ func (s *Server) DeleteAppIdentity(ctx context.Context, req *zitimanagementv1.De
 		return nil, status.Errorf(codes.InvalidArgument, "identity_id: %v", err)
 	}
 
-	identity, err := s.store.ResolveIdentityByIdentityID(ctx, appID)
-	if err != nil {
-		return nil, toStatusError(err)
+	identity, resolveErr := s.store.ResolveIdentityByIdentityID(ctx, appID)
+	identityFound := resolveErr == nil
+	if resolveErr != nil && !errors.Is(resolveErr, store.ErrManagedIdentityNotFound) {
+		return nil, toStatusError(resolveErr)
 	}
 
-	if err := s.store.DeleteManagedIdentity(ctx, identity.ZitiIdentityID); err != nil {
-		return nil, toStatusError(err)
-	}
+	if identityFound {
+		if err := s.store.DeleteManagedIdentity(ctx, identity.ZitiIdentityID); err != nil {
+			if errors.Is(err, store.ErrManagedIdentityNotFound) {
+				log.Printf("managed identity %s already deleted", identity.ZitiIdentityID)
+			} else {
+				return nil, toStatusError(err)
+			}
+		}
 
-	if err := s.ziti.DeleteIdentity(ctx, identity.ZitiIdentityID); err != nil {
-		if errors.Is(err, ziti.ErrIdentityNotFound) {
-			log.Printf("ziti identity %s already deleted", identity.ZitiIdentityID)
-		} else {
-			return nil, status.Errorf(codes.Internal, "delete ziti identity: %v", err)
+		if err := s.ziti.DeleteIdentity(ctx, identity.ZitiIdentityID); err != nil {
+			if errors.Is(err, ziti.ErrIdentityNotFound) {
+				log.Printf("ziti identity %s already deleted", identity.ZitiIdentityID)
+			} else {
+				return nil, status.Errorf(codes.Internal, "delete ziti identity: %v", err)
+			}
 		}
 	}
 
 	zitiServiceID := req.GetZitiServiceId()
-	if zitiServiceID == "" && identity.ZitiServiceID != nil {
+	if zitiServiceID == "" && identityFound && identity.ZitiServiceID != nil {
 		zitiServiceID = *identity.ZitiServiceID
 	}
 	if zitiServiceID == "" {
-		return nil, status.Errorf(codes.Internal, "managed identity %s missing ziti service id", identity.ZitiIdentityID)
+		if identityFound {
+			return nil, status.Errorf(codes.Internal, "managed identity %s missing ziti service id", identity.ZitiIdentityID)
+		}
+		log.Printf("app identity %s missing ziti service id", appID)
+		return &zitimanagementv1.DeleteAppIdentityResponse{}, nil
 	}
 	if err := s.ziti.DeleteService(ctx, zitiServiceID); err != nil {
 		if errors.Is(err, ziti.ErrServiceNotFound) {
