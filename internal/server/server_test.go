@@ -29,6 +29,12 @@ func TestServiceIdentityConfig(t *testing.T) {
 			wantRoles:  []string{"tracing-hosts"},
 		},
 		{
+			name:       "runners",
+			service:    store.ServiceTypeRunners,
+			wantPrefix: "svc-runners-",
+			wantRoles:  []string{"runners-service-hosts"},
+		},
+		{
 			name:    "unspecified",
 			service: store.ServiceTypeUnspecified,
 			wantErr: "service type unspecified",

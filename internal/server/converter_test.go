@@ -39,6 +39,11 @@ func TestFromProtoServiceType(t *testing.T) {
 			want:  store.ServiceTypeTracing,
 		},
 		{
+			name:  "runners",
+			input: zitimanagementv1.ServiceType_SERVICE_TYPE_RUNNERS,
+			want:  store.ServiceTypeRunners,
+		},
+		{
 			name:    "unspecified",
 			input:   zitimanagementv1.ServiceType_SERVICE_TYPE_UNSPECIFIED,
 			want:    store.ServiceTypeUnspecified,

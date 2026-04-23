@@ -584,6 +584,8 @@ func serviceIdentityConfig(serviceType store.ServiceType) (string, []string, err
 		return fmt.Sprintf("svc-llm-proxy-%s", suffix), []string{"llm-proxy-hosts"}, nil
 	case store.ServiceTypeTracing:
 		return fmt.Sprintf("svc-tracing-%s", suffix), []string{"tracing-hosts"}, nil
+	case store.ServiceTypeRunners:
+		return fmt.Sprintf("svc-runners-%s", suffix), []string{"runners-service-hosts"}, nil
 	case store.ServiceTypeUnspecified:
 		return "", nil, fmt.Errorf("service type unspecified")
 	default:
