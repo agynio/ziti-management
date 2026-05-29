@@ -45,11 +45,17 @@ type identityService interface {
 type serviceService interface {
 	CreateService(params *service.CreateServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.CreateServiceCreated, error)
 	DeleteService(params *service.DeleteServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DeleteServiceOK, error)
+	DetailService(params *service.DetailServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DetailServiceOK, error)
+	ListServiceConfig(params *service.ListServiceConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.ListServiceConfigOK, error)
+	ListServiceServicePolicies(params *service.ListServiceServicePoliciesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.ListServiceServicePoliciesOK, error)
+	ListServiceTerminators(params *service.ListServiceTerminatorsParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.ListServiceTerminatorsOK, error)
+	ListServices(params *service.ListServicesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.ListServicesOK, error)
 }
 
 type configService interface {
 	CreateConfig(params *config.CreateConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.CreateConfigCreated, error)
 	DeleteConfig(params *config.DeleteConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.DeleteConfigOK, error)
+	DetailConfig(params *config.DetailConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.DetailConfigOK, error)
 }
 
 type servicePolicyService interface {

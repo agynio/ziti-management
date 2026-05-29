@@ -112,6 +112,10 @@ func (f *fakeZitiClient) CreateServiceWithConfigs(_ context.Context, _ string, _
 	return "", errors.New("unexpected create service with configs")
 }
 
+func (f *fakeZitiClient) DebugServiceState(_ context.Context, _, _ string) (*ziti.DebugServiceState, error) {
+	return nil, errors.New("unexpected debug service state")
+}
+
 func (f *fakeZitiClient) CreateServicePolicy(_ context.Context, _ string, _ string, _ []string, _ []string) (string, error) {
 	return "", errors.New("unexpected create service policy")
 }

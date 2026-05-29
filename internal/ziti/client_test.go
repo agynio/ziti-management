@@ -52,8 +52,13 @@ func (f *fakeIdentityService) ListIdentities(params *identity.ListIdentitiesPara
 }
 
 type fakeServiceService struct {
-	createServiceFunc func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error)
-	deleteServiceFunc func(params *service.DeleteServiceParams) (*service.DeleteServiceOK, error)
+	createServiceFunc              func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error)
+	deleteServiceFunc              func(params *service.DeleteServiceParams) (*service.DeleteServiceOK, error)
+	detailServiceFunc              func(params *service.DetailServiceParams) (*service.DetailServiceOK, error)
+	listServiceConfigFunc          func(params *service.ListServiceConfigParams) (*service.ListServiceConfigOK, error)
+	listServiceServicePoliciesFunc func(params *service.ListServiceServicePoliciesParams) (*service.ListServiceServicePoliciesOK, error)
+	listServiceTerminatorsFunc     func(params *service.ListServiceTerminatorsParams) (*service.ListServiceTerminatorsOK, error)
+	listServicesFunc               func(params *service.ListServicesParams) (*service.ListServicesOK, error)
 }
 
 func (f *fakeServiceService) CreateService(params *service.CreateServiceParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.CreateServiceCreated, error) {
@@ -70,9 +75,45 @@ func (f *fakeServiceService) DeleteService(params *service.DeleteServiceParams, 
 	return f.deleteServiceFunc(params)
 }
 
+func (f *fakeServiceService) DetailService(params *service.DetailServiceParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.DetailServiceOK, error) {
+	if f.detailServiceFunc == nil {
+		return nil, errors.New("detail service not stubbed")
+	}
+	return f.detailServiceFunc(params)
+}
+
+func (f *fakeServiceService) ListServiceConfig(params *service.ListServiceConfigParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.ListServiceConfigOK, error) {
+	if f.listServiceConfigFunc == nil {
+		return nil, errors.New("list service config not stubbed")
+	}
+	return f.listServiceConfigFunc(params)
+}
+
+func (f *fakeServiceService) ListServiceServicePolicies(params *service.ListServiceServicePoliciesParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.ListServiceServicePoliciesOK, error) {
+	if f.listServiceServicePoliciesFunc == nil {
+		return nil, errors.New("list service service policies not stubbed")
+	}
+	return f.listServiceServicePoliciesFunc(params)
+}
+
+func (f *fakeServiceService) ListServiceTerminators(params *service.ListServiceTerminatorsParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.ListServiceTerminatorsOK, error) {
+	if f.listServiceTerminatorsFunc == nil {
+		return nil, errors.New("list service terminators not stubbed")
+	}
+	return f.listServiceTerminatorsFunc(params)
+}
+
+func (f *fakeServiceService) ListServices(params *service.ListServicesParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.ListServicesOK, error) {
+	if f.listServicesFunc == nil {
+		return nil, errors.New("list services not stubbed")
+	}
+	return f.listServicesFunc(params)
+}
+
 type fakeConfigService struct {
 	createConfigFunc func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error)
 	deleteConfigFunc func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error)
+	detailConfigFunc func(params *config.DetailConfigParams) (*config.DetailConfigOK, error)
 }
 
 func (f *fakeConfigService) CreateConfig(params *config.CreateConfigParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.CreateConfigCreated, error) {
@@ -87,6 +128,13 @@ func (f *fakeConfigService) DeleteConfig(params *config.DeleteConfigParams, _ ru
 		return nil, errors.New("delete config not stubbed")
 	}
 	return f.deleteConfigFunc(params)
+}
+
+func (f *fakeConfigService) DetailConfig(params *config.DetailConfigParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.DetailConfigOK, error) {
+	if f.detailConfigFunc == nil {
+		return nil, errors.New("detail config not stubbed")
+	}
+	return f.detailConfigFunc(params)
 }
 
 type fakeServicePolicyService struct {
