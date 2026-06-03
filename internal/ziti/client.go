@@ -396,9 +396,21 @@ func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, role
 	configIDs := make([]string, 0, 2)
 	if hostV1 != nil {
 		data := map[string]any{
-			"protocol": hostV1.Protocol,
-			"address":  hostV1.Address,
-			"port":     hostV1.Port,
+			"protocol":        hostV1.Protocol,
+			"address":         hostV1.Address,
+			"port":            hostV1.Port,
+			"forwardProtocol": hostV1.ForwardProtocol,
+			"forwardAddress":  hostV1.ForwardAddress,
+			"forwardPort":     hostV1.ForwardPort,
+		}
+		if len(hostV1.AllowedProtocols) > 0 {
+			data["allowedProtocols"] = hostV1.AllowedProtocols
+		}
+		if len(hostV1.AllowedAddresses) > 0 {
+			data["allowedAddresses"] = hostV1.AllowedAddresses
+		}
+		if len(hostV1.AllowedPortRanges) > 0 {
+			data["allowedPortRanges"] = portRangeConfigData(hostV1.AllowedPortRanges)
 		}
 		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), data)
 		if err != nil {
@@ -407,17 +419,10 @@ func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, role
 		configIDs = append(configIDs, configID)
 	}
 	if interceptV1 != nil {
-		portRanges := make([]map[string]any, len(interceptV1.PortRanges))
-		for i, portRange := range interceptV1.PortRanges {
-			portRanges[i] = map[string]any{
-				"low":  portRange.Low,
-				"high": portRange.High,
-			}
-		}
 		data := map[string]any{
 			"protocols":  interceptV1.Protocols,
 			"addresses":  interceptV1.Addresses,
-			"portRanges": portRanges,
+			"portRanges": portRangeConfigData(interceptV1.PortRanges),
 		}
 		configID, err := c.createConfig(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), data)
 		if err != nil {
@@ -431,6 +436,17 @@ func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, role
 		return "", c.cleanupConfigs(ctx, configIDs, err)
 	}
 	return serviceID, nil
+}
+
+func portRangeConfigData(portRanges []PortRangeData) []map[string]any {
+	data := make([]map[string]any, len(portRanges))
+	for i, portRange := range portRanges {
+		data[i] = map[string]any{
+			"low":  portRange.Low,
+			"high": portRange.High,
+		}
+	}
+	return data
 }
 
 func (c *Client) createService(ctx context.Context, name string, roleAttributes []string, configIDs []string) (string, error) {

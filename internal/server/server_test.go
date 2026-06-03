@@ -35,6 +35,12 @@ func TestServiceIdentityConfig(t *testing.T) {
 			wantRoles:  []string{"runners-service-hosts"},
 		},
 		{
+			name:       "egress gateway",
+			service:    store.ServiceTypeEgressGateway,
+			wantPrefix: "svc-egress-gateway-",
+			wantRoles:  []string{"egress-gateway-hosts"},
+		},
+		{
 			name:    "unspecified",
 			service: store.ServiceTypeUnspecified,
 			wantErr: "service type unspecified",

@@ -53,6 +53,8 @@ func fromProtoServiceType(value zitimanagementv1.ServiceType) (store.ServiceType
 		return store.ServiceTypeTracing, nil
 	case zitimanagementv1.ServiceType_SERVICE_TYPE_RUNNERS:
 		return store.ServiceTypeRunners, nil
+	case zitimanagementv1.ServiceType_SERVICE_TYPE_EGRESS_GATEWAY:
+		return store.ServiceTypeEgressGateway, nil
 	case zitimanagementv1.ServiceType_SERVICE_TYPE_UNSPECIFIED:
 		return store.ServiceTypeUnspecified, fmt.Errorf("service type unspecified")
 	default:
@@ -78,21 +80,52 @@ func fromProtoHostV1Config(value *zitimanagementv1.HostV1Config) (*ziti.HostV1Co
 		return nil, nil
 	}
 	protocol := strings.TrimSpace(value.GetProtocol())
-	if protocol == "" {
+	if protocol == "" && !value.GetForwardProtocol() {
 		return nil, fmt.Errorf("protocol is required")
 	}
 	address := strings.TrimSpace(value.GetAddress())
-	if address == "" {
+	if address == "" && !value.GetForwardAddress() {
 		return nil, fmt.Errorf("address is required")
 	}
 	port := value.GetPort()
-	if port <= 0 || port > maxPort {
+	if !value.GetForwardPort() && (port <= 0 || port > maxPort) {
 		return nil, fmt.Errorf("port must be between 1 and %d", maxPort)
 	}
+	if value.GetForwardPort() && port > maxPort {
+		return nil, fmt.Errorf("port must be between 1 and %d", maxPort)
+	}
+	if value.GetForwardProtocol() && len(value.GetAllowedProtocols()) == 0 {
+		return nil, fmt.Errorf("allowed_protocols is required when forward_protocol is true")
+	}
+	if value.GetForwardAddress() && len(value.GetAllowedAddresses()) == 0 {
+		return nil, fmt.Errorf("allowed_addresses is required when forward_address is true")
+	}
+	if value.GetForwardPort() && len(value.GetAllowedPortRanges()) == 0 {
+		return nil, fmt.Errorf("allowed_port_ranges is required when forward_port is true")
+	}
+	allowedProtocols, err := cleanOptionalStrings(value.GetAllowedProtocols(), "allowed_protocols")
+	if err != nil {
+		return nil, err
+	}
+	allowedAddresses, err := cleanOptionalStrings(value.GetAllowedAddresses(), "allowed_addresses")
+	if err != nil {
+		return nil, err
+	}
+	allowedPortRanges, err := fromProtoOptionalPortRanges(value.GetAllowedPortRanges(), "allowed_port_ranges")
+	if err != nil {
+		return nil, err
+	}
+
 	return &ziti.HostV1ConfigData{
-		Protocol: protocol,
-		Address:  address,
-		Port:     port,
+		Protocol:          protocol,
+		Address:           address,
+		Port:              port,
+		ForwardProtocol:   value.GetForwardProtocol(),
+		ForwardAddress:    value.GetForwardAddress(),
+		ForwardPort:       value.GetForwardPort(),
+		AllowedProtocols:  allowedProtocols,
+		AllowedAddresses:  allowedAddresses,
+		AllowedPortRanges: allowedPortRanges,
 	}, nil
 }
 
@@ -126,21 +159,9 @@ func fromProtoInterceptV1Config(value *zitimanagementv1.InterceptV1Config) (*zit
 		cleanAddresses[i] = cleaned
 	}
 
-	portRanges := value.GetPortRanges()
-	if len(portRanges) == 0 {
-		return nil, fmt.Errorf("port_ranges is required")
-	}
-	convertedRanges := make([]ziti.PortRangeData, len(portRanges))
-	for i, portRange := range portRanges {
-		low := portRange.GetLow()
-		high := portRange.GetHigh()
-		if low <= 0 || high <= 0 || low > maxPort || high > maxPort {
-			return nil, fmt.Errorf("port_ranges[%d] must be between 1 and %d", i, maxPort)
-		}
-		if high < low {
-			return nil, fmt.Errorf("port_ranges[%d] high must be >= low", i)
-		}
-		convertedRanges[i] = ziti.PortRangeData{Low: low, High: high}
+	convertedRanges, err := fromProtoPortRanges(value.GetPortRanges(), "port_ranges")
+	if err != nil {
+		return nil, err
 	}
 
 	return &ziti.InterceptV1ConfigData{
@@ -148,6 +169,47 @@ func fromProtoInterceptV1Config(value *zitimanagementv1.InterceptV1Config) (*zit
 		Addresses:  cleanAddresses,
 		PortRanges: convertedRanges,
 	}, nil
+}
+
+func cleanOptionalStrings(values []string, fieldName string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	cleanValues := make([]string, len(values))
+	for i, value := range values {
+		cleaned := strings.TrimSpace(value)
+		if cleaned == "" {
+			return nil, fmt.Errorf("%s[%d] is empty", fieldName, i)
+		}
+		cleanValues[i] = cleaned
+	}
+	return cleanValues, nil
+}
+
+func fromProtoPortRanges(portRanges []*zitimanagementv1.PortRange, fieldName string) ([]ziti.PortRangeData, error) {
+	if len(portRanges) == 0 {
+		return nil, fmt.Errorf("%s is required", fieldName)
+	}
+	return fromProtoOptionalPortRanges(portRanges, fieldName)
+}
+
+func fromProtoOptionalPortRanges(portRanges []*zitimanagementv1.PortRange, fieldName string) ([]ziti.PortRangeData, error) {
+	if len(portRanges) == 0 {
+		return nil, nil
+	}
+	convertedRanges := make([]ziti.PortRangeData, len(portRanges))
+	for i, portRange := range portRanges {
+		low := portRange.GetLow()
+		high := portRange.GetHigh()
+		if low <= 0 || high <= 0 || low > maxPort || high > maxPort {
+			return nil, fmt.Errorf("%s[%d] must be between 1 and %d", fieldName, i, maxPort)
+		}
+		if high < low {
+			return nil, fmt.Errorf("%s[%d] high must be >= low", fieldName, i)
+		}
+		convertedRanges[i] = ziti.PortRangeData{Low: low, High: high}
+	}
+	return convertedRanges, nil
 }
 
 func toProtoIdentityType(value store.IdentityType) (identityv1.IdentityType, error) {

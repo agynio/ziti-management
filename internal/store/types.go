@@ -22,12 +22,13 @@ const (
 type ServiceType int16
 
 const (
-	ServiceTypeUnspecified  ServiceType = 0
-	ServiceTypeGateway      ServiceType = 1
-	ServiceTypeOrchestrator ServiceType = 2
-	ServiceTypeLLMProxy     ServiceType = 4
-	ServiceTypeTracing      ServiceType = 5
-	ServiceTypeRunners      ServiceType = 6
+	ServiceTypeUnspecified   ServiceType = 0
+	ServiceTypeGateway       ServiceType = 1
+	ServiceTypeOrchestrator  ServiceType = 2
+	ServiceTypeLLMProxy      ServiceType = 4
+	ServiceTypeTracing       ServiceType = 5
+	ServiceTypeRunners       ServiceType = 6
+	ServiceTypeEgressGateway ServiceType = 7
 )
 
 type ManagedIdentity struct {

@@ -222,7 +222,17 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 	})
 
 	t.Run("creates configs", func(t *testing.T) {
-		host := &HostV1ConfigData{Protocol: "tcp", Address: "127.0.0.1", Port: 8080}
+		host := &HostV1ConfigData{
+			Protocol:          "tcp",
+			Address:           "127.0.0.1",
+			Port:              8080,
+			ForwardProtocol:   true,
+			ForwardAddress:    true,
+			ForwardPort:       true,
+			AllowedProtocols:  []string{"tcp"},
+			AllowedAddresses:  []string{"example.com"},
+			AllowedPortRanges: []PortRangeData{{Low: 80, High: 443}},
+		}
 		intercept := &InterceptV1ConfigData{
 			Protocols: []string{"tcp"},
 			Addresses: []string{"example.com"},
@@ -257,9 +267,22 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 						t.Fatalf("unexpected config name: %s", *params.Config.Name)
 					}
 					expected := map[string]any{
-						"protocol": "tcp",
-						"address":  "127.0.0.1",
-						"port":     int32(8080),
+						"protocol":        "tcp",
+						"address":         "127.0.0.1",
+						"port":            int32(8080),
+						"forwardProtocol": true,
+						"forwardAddress":  true,
+						"forwardPort":     true,
+						"allowedProtocols": []string{
+							"tcp",
+						},
+						"allowedAddresses": []string{
+							"example.com",
+						},
+						"allowedPortRanges": []map[string]any{{
+							"low":  int32(80),
+							"high": int32(443),
+						}},
 					}
 					if !reflect.DeepEqual(data, expected) {
 						t.Fatalf("unexpected host config data: %#v", data)

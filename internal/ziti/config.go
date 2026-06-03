@@ -6,9 +6,15 @@ const (
 )
 
 type HostV1ConfigData struct {
-	Protocol string
-	Address  string
-	Port     int32
+	Protocol          string
+	Address           string
+	Port              int32
+	ForwardProtocol   bool
+	ForwardAddress    bool
+	ForwardPort       bool
+	AllowedProtocols  []string
+	AllowedAddresses  []string
+	AllowedPortRanges []PortRangeData
 }
 
 type InterceptV1ConfigData struct {
