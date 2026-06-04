@@ -1,5 +1,5 @@
 nameOverride: ""
-fullnameOverride: ""
+fullnameOverride: "ziti-management"
 
 global:
   imageRegistry: ""
@@ -40,6 +40,8 @@ podSecurityContext:
 
 securityContext:
   enabled: true
+  runAsUser: 100
+  runAsGroup: 101
   runAsNonRoot: true
   readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
@@ -74,7 +76,10 @@ env:
   - name: GRPC_ADDRESS
     value: ":50051"
   - name: DATABASE_URL
-    value: ""
+    valueFrom:
+      secretKeyRef:
+        name: agyn-platform-database-urls
+        key: ziti-management
   - name: ZITI_CONTROLLER_URL
     value: ""
   - name: ZITI_CERT_FILE
@@ -85,6 +90,8 @@ env:
     value: "/var/lib/ziti/ca.crt"
   - name: ZITI_ENROLLMENT_JWT_FILE
     value: "/etc/ziti-enrollment/enrollmentJwt"
+  - name: ZITI_IDENTITY_NAME_RESOLVE
+    value: "true"
 envFrom: []
 extraEnvVars: []
 extraEnvVarsCM: ""
@@ -92,7 +99,7 @@ extraEnvVarsSecret: ""
 
 configMounts:
   - name: ziti-enrollment
-    sourceName: ziti-enrollment
+    sourceName: ziti-management-enrollment
     type: secret
     mountPath: /etc/ziti-enrollment
     readOnly: true
@@ -179,3 +186,5 @@ metrics:
         path: /metrics
         interval: ""
         scrapeTimeout: ""
+
+zitiControllerUrl: ""
