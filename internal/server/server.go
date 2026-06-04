@@ -42,8 +42,17 @@ type zitiClient interface {
 	CreateService(ctx context.Context, name string, roleAttributes []string) (string, error)
 	CreateServiceWithConfigs(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData) (string, error)
 	CreateServiceWithConfigsAndTags(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData, tags map[string]string) (string, error)
+	CreateServiceReturning(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData, returnExisting bool) (ziti.Service, error)
+	GetService(ctx context.Context, id string) (ziti.Service, error)
+	GetServiceByName(ctx context.Context, name string) (ziti.Service, error)
+	ListServices(ctx context.Context, filter ziti.ServiceListFilter) (ziti.ServiceListResult, error)
+	UpdateService(ctx context.Context, id string, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData) (ziti.Service, error)
 	CreateServicePolicy(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string) (string, error)
 	CreateServicePolicyWithTags(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string, tags map[string]string) (string, error)
+	CreateServicePolicyReturning(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string, returnExisting bool) (ziti.ServicePolicy, error)
+	GetServicePolicy(ctx context.Context, id string) (ziti.ServicePolicy, error)
+	GetServicePolicyByName(ctx context.Context, name string) (ziti.ServicePolicy, error)
+	ListServicePolicies(ctx context.Context, filter ziti.ServicePolicyListFilter) (ziti.ServicePolicyListResult, error)
 	CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error)
 	CreateDeviceIdentityWithOptions(ctx context.Context, userIdentityID uuid.UUID, name string, additionalRoleAttributes []string, tags map[string]string) (string, string, error)
 	CreateTunnelIdentity(ctx context.Context, networkID, tunnelCredentialID string, tags map[string]string) (string, ziti.EnrollmentJWT, error)
@@ -170,19 +179,14 @@ func (s *Server) CreateService(ctx context.Context, req *zitimanagementv1.Create
 		return nil, status.Errorf(codes.InvalidArgument, "intercept_v1_config: %v", err)
 	}
 
-	var serviceID string
-	if hostV1Config != nil || interceptV1Config != nil || len(req.GetTags()) > 0 {
-		serviceID, err = s.ziti.CreateServiceWithConfigsAndTags(ctx, name, roleAttributes, hostV1Config, interceptV1Config, req.GetTags())
-	} else {
-		serviceID, err = s.ziti.CreateService(ctx, name, roleAttributes)
-	}
+	service, err := s.ziti.CreateServiceReturning(ctx, name, roleAttributes, hostV1Config, interceptV1Config, req.GetReturnExisting())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create ziti service: %v", err)
 	}
 
 	return &zitimanagementv1.CreateServiceResponse{
-		ZitiServiceId:   serviceID,
-		ZitiServiceName: name,
+		ZitiServiceId:   service.ID,
+		ZitiServiceName: service.Name,
 	}, nil
 }
 
@@ -392,12 +396,12 @@ func (s *Server) CreateServicePolicy(ctx context.Context, req *zitimanagementv1.
 		return nil, status.Error(codes.InvalidArgument, "service_roles is required")
 	}
 
-	policyID, err := s.ziti.CreateServicePolicyWithTags(ctx, name, policyType, identityRoles, serviceRoles, req.GetTags())
+	policy, err := s.ziti.CreateServicePolicyReturning(ctx, name, policyType, identityRoles, serviceRoles, req.GetReturnExisting())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create ziti service policy: %v", err)
 	}
 
-	return &zitimanagementv1.CreateServicePolicyResponse{ZitiServicePolicyId: policyID}, nil
+	return &zitimanagementv1.CreateServicePolicyResponse{ZitiServicePolicyId: policy.ID}, nil
 }
 
 func (s *Server) DeleteServicePolicy(ctx context.Context, req *zitimanagementv1.DeleteServicePolicyRequest) (*zitimanagementv1.DeleteServicePolicyResponse, error) {

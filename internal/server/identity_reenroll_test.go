@@ -448,3 +448,39 @@ func TestPatchIdentityRoleAttributesMapsNotFound(t *testing.T) {
 		t.Fatalf("expected not found, got %v", err)
 	}
 }
+
+func (f *fakeZitiClient) CreateServiceReturning(_ context.Context, name string, _ []string, _ *ziti.HostV1ConfigData, _ *ziti.InterceptV1ConfigData, _ bool) (ziti.Service, error) {
+	return ziti.Service{ID: "service-id", Name: name}, nil
+}
+
+func (f *fakeZitiClient) GetService(_ context.Context, id string) (ziti.Service, error) {
+	return ziti.Service{ID: id, Name: "service"}, nil
+}
+
+func (f *fakeZitiClient) GetServiceByName(_ context.Context, name string) (ziti.Service, error) {
+	return ziti.Service{ID: "service-id", Name: name}, nil
+}
+
+func (f *fakeZitiClient) ListServices(context.Context, ziti.ServiceListFilter) (ziti.ServiceListResult, error) {
+	return ziti.ServiceListResult{}, nil
+}
+
+func (f *fakeZitiClient) UpdateService(_ context.Context, id string, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData) (ziti.Service, error) {
+	return ziti.Service{ID: id, Name: name, RoleAttributes: roleAttributes, HostV1Config: hostV1, InterceptV1Config: interceptV1}, nil
+}
+
+func (f *fakeZitiClient) CreateServicePolicyReturning(_ context.Context, name string, policyType string, identityRoles []string, serviceRoles []string, _ bool) (ziti.ServicePolicy, error) {
+	return ziti.ServicePolicy{ID: "policy-id", Name: name, Type: policyType, IdentityRoles: identityRoles, ServiceRoles: serviceRoles}, nil
+}
+
+func (f *fakeZitiClient) GetServicePolicy(_ context.Context, id string) (ziti.ServicePolicy, error) {
+	return ziti.ServicePolicy{ID: id, Name: "policy", Type: "Dial"}, nil
+}
+
+func (f *fakeZitiClient) GetServicePolicyByName(_ context.Context, name string) (ziti.ServicePolicy, error) {
+	return ziti.ServicePolicy{ID: "policy-id", Name: name, Type: "Dial"}, nil
+}
+
+func (f *fakeZitiClient) ListServicePolicies(context.Context, ziti.ServicePolicyListFilter) (ziti.ServicePolicyListResult, error) {
+	return ziti.ServicePolicyListResult{}, nil
+}

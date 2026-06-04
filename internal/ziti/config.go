@@ -54,6 +54,27 @@ type OpenZitiService struct {
 	Tags           map[string]string
 }
 
+type Service struct {
+	ID                string
+	Name              string
+	RoleAttributes    []string
+	HostV1Config      *HostV1ConfigData
+	InterceptV1Config *InterceptV1ConfigData
+}
+
+type ServiceListFilter struct {
+	Name           string
+	NamePrefix     string
+	RoleAttributes []string
+	PageSize       int32
+	PageToken      string
+}
+
+type ServiceListResult struct {
+	Services      []Service
+	NextPageToken string
+}
+
 type OpenZitiServicePolicy struct {
 	ID            string
 	Name          string
@@ -61,6 +82,29 @@ type OpenZitiServicePolicy struct {
 	IdentityRoles []string
 	ServiceRoles  []string
 	Tags          map[string]string
+}
+
+type ServicePolicy struct {
+	ID            string
+	Name          string
+	Type          string
+	IdentityRoles []string
+	ServiceRoles  []string
+}
+
+type ServicePolicyListFilter struct {
+	Name          string
+	NamePrefix    string
+	Type          string
+	IdentityRoles []string
+	ServiceRoles  []string
+	PageSize      int32
+	PageToken     string
+}
+
+type ServicePolicyListResult struct {
+	ServicePolicies []ServicePolicy
+	NextPageToken   string
 }
 
 type ListResult[T any] struct {

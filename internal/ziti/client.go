@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,6 +49,9 @@ type identityService interface {
 
 type serviceService interface {
 	CreateService(params *service.CreateServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.CreateServiceCreated, error)
+	DetailService(params *service.DetailServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DetailServiceOK, error)
+	ListServices(params *service.ListServicesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.ListServicesOK, error)
+	UpdateService(params *service.UpdateServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.UpdateServiceOK, error)
 	DeleteService(params *service.DeleteServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DeleteServiceOK, error)
 	DetailService(params *service.DetailServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DetailServiceOK, error)
 	ListServiceConfig(params *service.ListServiceConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.ListServiceConfigOK, error)
@@ -63,6 +67,8 @@ type configService interface {
 
 type servicePolicyService interface {
 	CreateServicePolicy(params *service_policy.CreateServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.CreateServicePolicyCreated, error)
+	DetailServicePolicy(params *service_policy.DetailServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.DetailServicePolicyOK, error)
+	ListServicePolicies(params *service_policy.ListServicePoliciesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.ListServicePoliciesOK, error)
 	DeleteServicePolicy(params *service_policy.DeleteServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.DeleteServicePolicyOK, error)
 	ListServicePolicies(params *service_policy.ListServicePoliciesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.ListServicePoliciesOK, error)
 }
@@ -1249,4 +1255,455 @@ func (c *Client) DeleteIdentity(ctx context.Context, zitiIdentityID string) erro
 		return ErrIdentityNotFound
 	}
 	return fmt.Errorf("delete ziti identity: %w", err)
+}
+
+const defaultListLimit int64 = 100
+
+func (c *Client) GetService(ctx context.Context, id string) (Service, error) {
+	params := service.NewDetailServiceParamsWithContext(ctx)
+	params.ID = id
+	var detail *rest_model.ServiceDetail
+	err := c.withReauth(func() error {
+		serviceClient := c.serviceClient()
+		resp, callErr := serviceClient.DetailService(params, nil)
+		if callErr != nil {
+			return callErr
+		}
+		if resp != nil && resp.Payload != nil {
+			detail = resp.Payload.Data
+		}
+		return nil
+	})
+	if err != nil {
+		var notFound *service.DetailServiceNotFound
+		if errors.As(err, &notFound) {
+			return Service{}, ErrServiceNotFound
+		}
+		return Service{}, fmt.Errorf("get ziti service: %w", err)
+	}
+	if detail == nil {
+		return Service{}, fmt.Errorf("get ziti service: missing response data")
+	}
+	return serviceFromDetail(detail), nil
+}
+
+func (c *Client) GetServiceByName(ctx context.Context, name string) (Service, error) {
+	result, err := c.ListServices(ctx, ServiceListFilter{Name: name, PageSize: 2})
+	if err != nil {
+		return Service{}, err
+	}
+	if len(result.Services) == 0 {
+		return Service{}, ErrServiceNotFound
+	}
+	return result.Services[0], nil
+}
+
+func (c *Client) ListServices(ctx context.Context, filter ServiceListFilter) (ServiceListResult, error) {
+	limit := listLimit(filter.PageSize)
+	offset, err := decodePageToken(filter.PageToken)
+	if err != nil {
+		return ServiceListResult{}, err
+	}
+	queryFilter := serviceFilter(filter)
+	params := service.NewListServicesParamsWithContext(ctx)
+	params.Limit = &limit
+	params.Offset = &offset
+	if queryFilter != "" {
+		params.Filter = &queryFilter
+	}
+	var envelope *rest_model.ListServicesEnvelope
+	err = c.withReauth(func() error {
+		serviceClient := c.serviceClient()
+		resp, callErr := serviceClient.ListServices(params, nil)
+		if callErr != nil {
+			return callErr
+		}
+		if resp != nil {
+			envelope = resp.Payload
+		}
+		return nil
+	})
+	if err != nil {
+		return ServiceListResult{}, fmt.Errorf("list ziti services: %w", err)
+	}
+	if envelope == nil {
+		return ServiceListResult{}, fmt.Errorf("list ziti services: missing response data")
+	}
+	items := make([]Service, 0, len(envelope.Data))
+	for _, detail := range envelope.Data {
+		items = append(items, serviceFromDetail(detail))
+	}
+	return ServiceListResult{Services: items, NextPageToken: nextPageToken(envelope.Meta)}, nil
+}
+
+func (c *Client) CreateServiceReturning(ctx context.Context, name string, roleAttributes []string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData, returnExisting bool) (Service, error) {
+	serviceID, err := c.CreateServiceWithConfigs(ctx, name, roleAttributes, hostV1, interceptV1)
+	if err == nil {
+		return c.GetService(ctx, serviceID)
+	}
+	if !returnExisting || !isConflictError(err) {
+		return Service{}, err
+	}
+	return c.GetServiceByName(ctx, name)
+}
+
+func (c *Client) UpdateService(ctx context.Context, id string, name string, roleAttributes []string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData) (Service, error) {
+	configIDs := make([]string, 0, 2)
+	if hostV1 != nil {
+		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), hostV1ConfigData(hostV1))
+		if err != nil {
+			return Service{}, err
+		}
+		configIDs = append(configIDs, configID)
+	}
+	if interceptV1 != nil {
+		configID, err := c.createConfig(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), interceptV1ConfigData(interceptV1))
+		if err != nil {
+			return Service{}, c.cleanupConfigs(ctx, configIDs, err)
+		}
+		configIDs = append(configIDs, configID)
+	}
+	params := service.NewUpdateServiceParamsWithContext(ctx)
+	params.ID = id
+	params.Service = &rest_model.ServiceUpdate{Name: &name, RoleAttributes: roleAttributes, Configs: configIDs}
+	err := c.withReauth(func() error {
+		serviceClient := c.serviceClient()
+		_, callErr := serviceClient.UpdateService(params, nil)
+		return callErr
+	})
+	if err != nil {
+		var notFound *service.UpdateServiceNotFound
+		if errors.As(err, &notFound) {
+			return Service{}, c.cleanupConfigs(ctx, configIDs, ErrServiceNotFound)
+		}
+		return Service{}, c.cleanupConfigs(ctx, configIDs, fmt.Errorf("update ziti service: %w", err))
+	}
+	return c.GetService(ctx, id)
+}
+
+func (c *Client) GetServicePolicy(ctx context.Context, id string) (ServicePolicy, error) {
+	params := service_policy.NewDetailServicePolicyParamsWithContext(ctx)
+	params.ID = id
+	var detail *rest_model.ServicePolicyDetail
+	err := c.withReauth(func() error {
+		servicePolicyClient := c.servicePolicyClient()
+		resp, callErr := servicePolicyClient.DetailServicePolicy(params, nil)
+		if callErr != nil {
+			return callErr
+		}
+		if resp != nil && resp.Payload != nil {
+			detail = resp.Payload.Data
+		}
+		return nil
+	})
+	if err != nil {
+		var notFound *service_policy.DetailServicePolicyNotFound
+		if errors.As(err, &notFound) {
+			return ServicePolicy{}, ErrServicePolicyNotFound
+		}
+		return ServicePolicy{}, fmt.Errorf("get ziti service policy: %w", err)
+	}
+	if detail == nil {
+		return ServicePolicy{}, fmt.Errorf("get ziti service policy: missing response data")
+	}
+	return servicePolicyFromDetail(detail), nil
+}
+
+func (c *Client) GetServicePolicyByName(ctx context.Context, name string) (ServicePolicy, error) {
+	result, err := c.ListServicePolicies(ctx, ServicePolicyListFilter{Name: name, PageSize: 2})
+	if err != nil {
+		return ServicePolicy{}, err
+	}
+	if len(result.ServicePolicies) == 0 {
+		return ServicePolicy{}, ErrServicePolicyNotFound
+	}
+	return result.ServicePolicies[0], nil
+}
+
+func (c *Client) ListServicePolicies(ctx context.Context, filter ServicePolicyListFilter) (ServicePolicyListResult, error) {
+	limit := listLimit(filter.PageSize)
+	offset, err := decodePageToken(filter.PageToken)
+	if err != nil {
+		return ServicePolicyListResult{}, err
+	}
+	queryFilter := servicePolicyFilter(filter)
+	params := service_policy.NewListServicePoliciesParamsWithContext(ctx)
+	params.Limit = &limit
+	params.Offset = &offset
+	if queryFilter != "" {
+		params.Filter = &queryFilter
+	}
+	var envelope *rest_model.ListServicePoliciesEnvelope
+	err = c.withReauth(func() error {
+		servicePolicyClient := c.servicePolicyClient()
+		resp, callErr := servicePolicyClient.ListServicePolicies(params, nil)
+		if callErr != nil {
+			return callErr
+		}
+		if resp != nil {
+			envelope = resp.Payload
+		}
+		return nil
+	})
+	if err != nil {
+		return ServicePolicyListResult{}, fmt.Errorf("list ziti service policies: %w", err)
+	}
+	if envelope == nil {
+		return ServicePolicyListResult{}, fmt.Errorf("list ziti service policies: missing response data")
+	}
+	items := make([]ServicePolicy, 0, len(envelope.Data))
+	for _, detail := range envelope.Data {
+		items = append(items, servicePolicyFromDetail(detail))
+	}
+	return ServicePolicyListResult{ServicePolicies: items, NextPageToken: nextPageToken(envelope.Meta)}, nil
+}
+
+func (c *Client) CreateServicePolicyReturning(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string, returnExisting bool) (ServicePolicy, error) {
+	policyID, err := c.CreateServicePolicy(ctx, name, policyType, identityRoles, serviceRoles)
+	if err == nil {
+		return c.GetServicePolicy(ctx, policyID)
+	}
+	if !returnExisting || !isConflictError(err) {
+		return ServicePolicy{}, err
+	}
+	return c.GetServicePolicyByName(ctx, name)
+}
+
+func hostV1ConfigData(hostV1 *HostV1ConfigData) map[string]any {
+	data := map[string]any{
+		"protocol":        hostV1.Protocol,
+		"address":         hostV1.Address,
+		"port":            hostV1.Port,
+		"forwardProtocol": hostV1.ForwardProtocol,
+		"forwardAddress":  hostV1.ForwardAddress,
+		"forwardPort":     hostV1.ForwardPort,
+	}
+	if len(hostV1.AllowedProtocols) > 0 {
+		data["allowedProtocols"] = hostV1.AllowedProtocols
+	}
+	if len(hostV1.AllowedAddresses) > 0 {
+		data["allowedAddresses"] = hostV1.AllowedAddresses
+	}
+	if len(hostV1.AllowedPortRanges) > 0 {
+		data["allowedPortRanges"] = portRangeConfigData(hostV1.AllowedPortRanges)
+	}
+	return data
+}
+
+func interceptV1ConfigData(interceptV1 *InterceptV1ConfigData) map[string]any {
+	return map[string]any{
+		"protocols":  interceptV1.Protocols,
+		"addresses":  interceptV1.Addresses,
+		"portRanges": portRangeConfigData(interceptV1.PortRanges),
+	}
+}
+
+func serviceFromDetail(detail *rest_model.ServiceDetail) Service {
+	return Service{
+		ID:                stringValue(detail.ID),
+		Name:              stringValue(detail.Name),
+		RoleAttributes:    attributesToStrings(detail.RoleAttributes),
+		HostV1Config:      hostV1FromConfig(detail.Config["host.v1"]),
+		InterceptV1Config: interceptV1FromConfig(detail.Config["intercept.v1"]),
+	}
+}
+
+func servicePolicyFromDetail(detail *rest_model.ServicePolicyDetail) ServicePolicy {
+	return ServicePolicy{
+		ID:            stringValue(detail.ID),
+		Name:          stringValue(detail.Name),
+		Type:          stringValue((*string)(detail.Type)),
+		IdentityRoles: rolesToStrings(detail.IdentityRoles),
+		ServiceRoles:  rolesToStrings(detail.ServiceRoles),
+	}
+}
+
+func serviceFilter(filter ServiceListFilter) string {
+	parts := make([]string, 0)
+	if filter.Name != "" {
+		parts = append(parts, fmt.Sprintf(`name = "%s"`, escapeFilterValue(filter.Name)))
+	}
+	if filter.NamePrefix != "" {
+		parts = append(parts, fmt.Sprintf(`name contains "%s"`, escapeFilterValue(filter.NamePrefix)))
+	}
+	for _, role := range filter.RoleAttributes {
+		parts = append(parts, fmt.Sprintf(`roleAttributes contains "%s"`, escapeFilterValue(role)))
+	}
+	return strings.Join(parts, " and ")
+}
+
+func servicePolicyFilter(filter ServicePolicyListFilter) string {
+	parts := make([]string, 0)
+	if filter.Name != "" {
+		parts = append(parts, fmt.Sprintf(`name = "%s"`, escapeFilterValue(filter.Name)))
+	}
+	if filter.NamePrefix != "" {
+		parts = append(parts, fmt.Sprintf(`name contains "%s"`, escapeFilterValue(filter.NamePrefix)))
+	}
+	if filter.Type != "" {
+		parts = append(parts, fmt.Sprintf(`type = "%s"`, escapeFilterValue(filter.Type)))
+	}
+	for _, role := range filter.IdentityRoles {
+		parts = append(parts, fmt.Sprintf(`identityRoles contains "%s"`, escapeFilterValue(role)))
+	}
+	for _, role := range filter.ServiceRoles {
+		parts = append(parts, fmt.Sprintf(`serviceRoles contains "%s"`, escapeFilterValue(role)))
+	}
+	return strings.Join(parts, " and ")
+}
+
+func escapeFilterValue(value string) string {
+	return strings.ReplaceAll(value, `"`, `\"`)
+}
+
+func listLimit(pageSize int32) int64 {
+	if pageSize <= 0 {
+		return defaultListLimit
+	}
+	return int64(pageSize)
+}
+
+func decodePageToken(token string) (int64, error) {
+	if token == "" {
+		return 0, nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return 0, fmt.Errorf("invalid page token")
+	}
+	offset, err := strconv.ParseInt(string(raw), 10, 64)
+	if err != nil || offset < 0 {
+		return 0, fmt.Errorf("invalid page token")
+	}
+	return offset, nil
+}
+
+func nextPageToken(meta *rest_model.Meta) string {
+	if meta == nil || meta.Pagination == nil || meta.Pagination.Offset == nil || meta.Pagination.Limit == nil || meta.Pagination.TotalCount == nil {
+		return ""
+	}
+	nextOffset := *meta.Pagination.Offset + *meta.Pagination.Limit
+	if nextOffset >= *meta.Pagination.TotalCount {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(nextOffset, 10)))
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func attributesToStrings(values *rest_model.Attributes) []string {
+	if values == nil {
+		return nil
+	}
+	return append([]string(nil), ([]string)(*values)...)
+}
+
+func rolesToStrings(values rest_model.Roles) []string {
+	return append([]string(nil), ([]string)(values)...)
+}
+
+func hostV1FromConfig(config map[string]any) *HostV1ConfigData {
+	if config == nil {
+		return nil
+	}
+	return &HostV1ConfigData{
+		Protocol:          stringFromMap(config, "protocol"),
+		Address:           stringFromMap(config, "address"),
+		Port:              int32FromMap(config, "port"),
+		ForwardProtocol:   boolFromMap(config, "forwardProtocol"),
+		ForwardAddress:    boolFromMap(config, "forwardAddress"),
+		ForwardPort:       boolFromMap(config, "forwardPort"),
+		AllowedProtocols:  stringsFromMap(config, "allowedProtocols"),
+		AllowedAddresses:  stringsFromMap(config, "allowedAddresses"),
+		AllowedPortRanges: portRangesFromMap(config, "allowedPortRanges"),
+	}
+}
+
+func interceptV1FromConfig(config map[string]any) *InterceptV1ConfigData {
+	if config == nil {
+		return nil
+	}
+	return &InterceptV1ConfigData{
+		Protocols:  stringsFromMap(config, "protocols"),
+		Addresses:  stringsFromMap(config, "addresses"),
+		PortRanges: portRangesFromMap(config, "portRanges"),
+	}
+}
+
+func stringFromMap(values map[string]any, key string) string {
+	value, ok := values[key].(string)
+	if !ok {
+		return ""
+	}
+	return value
+}
+
+func boolFromMap(values map[string]any, key string) bool {
+	value, ok := values[key].(bool)
+	return ok && value
+}
+
+func int32FromMap(values map[string]any, key string) int32 {
+	switch value := values[key].(type) {
+	case int32:
+		return value
+	case int:
+		return int32(value)
+	case int64:
+		return int32(value)
+	case float64:
+		return int32(value)
+	case json.Number:
+		parsed, err := strconv.ParseInt(value.String(), 10, 32)
+		if err != nil {
+			return 0
+		}
+		return int32(parsed)
+	default:
+		return 0
+	}
+}
+
+func stringsFromMap(values map[string]any, key string) []string {
+	raw, ok := values[key].([]any)
+	if !ok {
+		if strings, ok := values[key].([]string); ok {
+			return append([]string(nil), strings...)
+		}
+		return nil
+	}
+	strings := make([]string, 0, len(raw))
+	for _, item := range raw {
+		value, ok := item.(string)
+		if ok {
+			strings = append(strings, value)
+		}
+	}
+	return strings
+}
+
+func portRangesFromMap(values map[string]any, key string) []PortRangeData {
+	raw, ok := values[key].([]any)
+	if !ok {
+		return nil
+	}
+	portRanges := make([]PortRangeData, 0, len(raw))
+	for _, item := range raw {
+		value, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		portRanges = append(portRanges, PortRangeData{Low: int32FromMap(value, "low"), High: int32FromMap(value, "high")})
+	}
+	return portRanges
+}
+
+func isConflictError(err error) bool {
+	var checker statusCodeChecker
+	return errors.As(err, &checker) && checker.IsCode(409)
 }

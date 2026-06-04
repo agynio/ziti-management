@@ -66,6 +66,9 @@ func (f *fakeIdentityService) PatchIdentity(params *identity.PatchIdentityParams
 
 type fakeServiceService struct {
 	createServiceFunc func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error)
+	detailServiceFunc func(params *service.DetailServiceParams) (*service.DetailServiceOK, error)
+	listServicesFunc  func(params *service.ListServicesParams) (*service.ListServicesOK, error)
+	updateServiceFunc func(params *service.UpdateServiceParams) (*service.UpdateServiceOK, error)
 	deleteServiceFunc func(params *service.DeleteServiceParams) (*service.DeleteServiceOK, error)
 	detailServiceFunc func(params *service.DetailServiceParams) (*service.DetailServiceOK, error)
 	listConfigFunc    func(params *service.ListServiceConfigParams) (*service.ListServiceConfigOK, error)
@@ -78,6 +81,27 @@ func (f *fakeServiceService) CreateService(params *service.CreateServiceParams, 
 		return nil, errors.New("create service not stubbed")
 	}
 	return f.createServiceFunc(params)
+}
+
+func (f *fakeServiceService) DetailService(params *service.DetailServiceParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.DetailServiceOK, error) {
+	if f.detailServiceFunc == nil {
+		return nil, errors.New("detail service not stubbed")
+	}
+	return f.detailServiceFunc(params)
+}
+
+func (f *fakeServiceService) ListServices(params *service.ListServicesParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.ListServicesOK, error) {
+	if f.listServicesFunc == nil {
+		return nil, errors.New("list services not stubbed")
+	}
+	return f.listServicesFunc(params)
+}
+
+func (f *fakeServiceService) UpdateService(params *service.UpdateServiceParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.UpdateServiceOK, error) {
+	if f.updateServiceFunc == nil {
+		return nil, errors.New("update service not stubbed")
+	}
+	return f.updateServiceFunc(params)
 }
 
 func (f *fakeServiceService) DeleteService(params *service.DeleteServiceParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.DeleteServiceOK, error) {
@@ -144,6 +168,8 @@ func (f *fakeConfigService) PatchConfig(params *config.PatchConfigParams, _ runt
 
 type fakeServicePolicyService struct {
 	createServicePolicyFunc func(params *service_policy.CreateServicePolicyParams) (*service_policy.CreateServicePolicyCreated, error)
+	detailServicePolicyFunc func(params *service_policy.DetailServicePolicyParams) (*service_policy.DetailServicePolicyOK, error)
+	listServicePoliciesFunc func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error)
 	deleteServicePolicyFunc func(params *service_policy.DeleteServicePolicyParams) (*service_policy.DeleteServicePolicyOK, error)
 	listServicePoliciesFunc func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error)
 }
@@ -153,6 +179,20 @@ func (f *fakeServicePolicyService) CreateServicePolicy(params *service_policy.Cr
 		return nil, errors.New("create service policy not stubbed")
 	}
 	return f.createServicePolicyFunc(params)
+}
+
+func (f *fakeServicePolicyService) DetailServicePolicy(params *service_policy.DetailServicePolicyParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.DetailServicePolicyOK, error) {
+	if f.detailServicePolicyFunc == nil {
+		return nil, errors.New("detail service policy not stubbed")
+	}
+	return f.detailServicePolicyFunc(params)
+}
+
+func (f *fakeServicePolicyService) ListServicePolicies(params *service_policy.ListServicePoliciesParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.ListServicePoliciesOK, error) {
+	if f.listServicePoliciesFunc == nil {
+		return nil, errors.New("list service policies not stubbed")
+	}
+	return f.listServicePoliciesFunc(params)
 }
 
 func (f *fakeServicePolicyService) DeleteServicePolicy(params *service_policy.DeleteServicePolicyParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.DeleteServicePolicyOK, error) {

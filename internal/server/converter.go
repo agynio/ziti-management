@@ -75,6 +75,19 @@ func fromProtoServicePolicyType(value zitimanagementv1.ServicePolicyType) (strin
 	}
 }
 
+func toProtoServicePolicyType(value string) (zitimanagementv1.ServicePolicyType, error) {
+	switch value {
+	case "Bind":
+		return zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_BIND, nil
+	case "Dial":
+		return zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_DIAL, nil
+	case "":
+		return zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_UNSPECIFIED, fmt.Errorf("service policy type unspecified")
+	default:
+		return zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_UNSPECIFIED, fmt.Errorf("unknown service policy type %s", value)
+	}
+}
+
 func fromProtoHostV1Config(value *zitimanagementv1.HostV1Config) (*ziti.HostV1ConfigData, error) {
 	if value == nil {
 		return nil, nil
@@ -210,6 +223,69 @@ func fromProtoOptionalPortRanges(portRanges []*zitimanagementv1.PortRange, field
 		convertedRanges[i] = ziti.PortRangeData{Low: low, High: high}
 	}
 	return convertedRanges, nil
+}
+
+func toProtoService(value ziti.Service) *zitimanagementv1.Service {
+	return &zitimanagementv1.Service{
+		ZitiServiceId:     value.ID,
+		Name:              value.Name,
+		RoleAttributes:    value.RoleAttributes,
+		HostV1Config:      toProtoHostV1Config(value.HostV1Config),
+		InterceptV1Config: toProtoInterceptV1Config(value.InterceptV1Config),
+	}
+}
+
+func toProtoServicePolicy(value ziti.ServicePolicy) (*zitimanagementv1.ServicePolicy, error) {
+	policyType, err := toProtoServicePolicyType(value.Type)
+	if err != nil {
+		return nil, err
+	}
+	return &zitimanagementv1.ServicePolicy{
+		ZitiServicePolicyId: value.ID,
+		Name:                value.Name,
+		Type:                policyType,
+		IdentityRoles:       value.IdentityRoles,
+		ServiceRoles:        value.ServiceRoles,
+	}, nil
+}
+
+func toProtoHostV1Config(value *ziti.HostV1ConfigData) *zitimanagementv1.HostV1Config {
+	if value == nil {
+		return nil
+	}
+	return &zitimanagementv1.HostV1Config{
+		Protocol:          value.Protocol,
+		Address:           value.Address,
+		Port:              value.Port,
+		ForwardProtocol:   value.ForwardProtocol,
+		ForwardAddress:    value.ForwardAddress,
+		ForwardPort:       value.ForwardPort,
+		AllowedProtocols:  value.AllowedProtocols,
+		AllowedAddresses:  value.AllowedAddresses,
+		AllowedPortRanges: toProtoPortRanges(value.AllowedPortRanges),
+	}
+}
+
+func toProtoInterceptV1Config(value *ziti.InterceptV1ConfigData) *zitimanagementv1.InterceptV1Config {
+	if value == nil {
+		return nil
+	}
+	return &zitimanagementv1.InterceptV1Config{
+		Protocols:  value.Protocols,
+		Addresses:  value.Addresses,
+		PortRanges: toProtoPortRanges(value.PortRanges),
+	}
+}
+
+func toProtoPortRanges(portRanges []ziti.PortRangeData) []*zitimanagementv1.PortRange {
+	if len(portRanges) == 0 {
+		return nil
+	}
+	values := make([]*zitimanagementv1.PortRange, 0, len(portRanges))
+	for _, portRange := range portRanges {
+		values = append(values, &zitimanagementv1.PortRange{Low: portRange.Low, High: portRange.High})
+	}
+	return values
 }
 
 func toProtoIdentityType(value store.IdentityType) (identityv1.IdentityType, error) {
