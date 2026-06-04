@@ -22,7 +22,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
 COPY buf.gen.yaml buf.yaml buf.lock ./
-RUN buf generate buf.build/agynio/api --path agynio/api/ziti_management/v1
+RUN buf generate https://github.com/agynio/api.git#branch=noa/issue-60-api \
+    --path proto/agynio/api/ziti_management/v1/ziti_management.proto
 
 COPY . .
 
