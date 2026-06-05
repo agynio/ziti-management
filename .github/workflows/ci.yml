@@ -30,7 +30,7 @@ jobs:
 
       - name: Generate gRPC stubs
         run: |
-          buf generate buf.build/agynio/api \
+          buf generate "https://github.com/agynio/api.git#branch=noa/ziti-debug-state,subdir=proto" \
             --path agynio/api/ziti_management/v1
 
       - name: Go vet

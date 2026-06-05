@@ -37,6 +37,7 @@ type zitiClient interface {
 	CreateAndEnrollServiceIdentity(ctx context.Context, name string, roleAttributes []string) (string, []byte, error)
 	CreateService(ctx context.Context, name string, roleAttributes []string) (string, error)
 	CreateServiceWithConfigs(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData) (string, error)
+	DebugServiceState(ctx context.Context, serviceID, serviceName string) (*ziti.DebugServiceState, error)
 	CreateServicePolicy(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string) (string, error)
 	CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error)
 	DeleteIdentity(ctx context.Context, zitiIdentityID string) error
@@ -418,6 +419,43 @@ func (s *Server) DeleteService(ctx context.Context, req *zitimanagementv1.Delete
 	}
 
 	return &zitimanagementv1.DeleteServiceResponse{}, nil
+}
+
+func (s *Server) DebugServiceState(ctx context.Context, req *zitimanagementv1.DebugServiceStateRequest) (*zitimanagementv1.DebugServiceStateResponse, error) {
+	serviceID, serviceName, err := debugServiceIdentifier(req)
+	if err != nil {
+		return nil, err
+	}
+
+	state, err := s.ziti.DebugServiceState(ctx, serviceID, serviceName)
+	if err != nil {
+		if errors.Is(err, ziti.ErrServiceNotFound) {
+			return nil, status.Error(codes.NotFound, "ziti service not found")
+		}
+		return nil, status.Errorf(codes.Internal, "debug ziti service state: %v", err)
+	}
+	return toProtoDebugServiceState(state), nil
+}
+
+func debugServiceIdentifier(req *zitimanagementv1.DebugServiceStateRequest) (string, string, error) {
+	switch identifier := req.GetServiceIdentifier().(type) {
+	case *zitimanagementv1.DebugServiceStateRequest_ZitiServiceId:
+		serviceID := strings.TrimSpace(identifier.ZitiServiceId)
+		if serviceID == "" {
+			return "", "", status.Error(codes.InvalidArgument, "ziti_service_id is required")
+		}
+		return serviceID, "", nil
+	case *zitimanagementv1.DebugServiceStateRequest_ZitiServiceName:
+		serviceName := strings.TrimSpace(identifier.ZitiServiceName)
+		if serviceName == "" {
+			return "", "", status.Error(codes.InvalidArgument, "ziti_service_name is required")
+		}
+		return "", serviceName, nil
+	case nil:
+		return "", "", status.Error(codes.InvalidArgument, "ziti_service_id or ziti_service_name is required")
+	default:
+		return "", "", status.Error(codes.InvalidArgument, "unknown service identifier")
+	}
 }
 
 func (s *Server) CreateDeviceIdentity(ctx context.Context, req *zitimanagementv1.CreateDeviceIdentityRequest) (*zitimanagementv1.CreateDeviceIdentityResponse, error) {

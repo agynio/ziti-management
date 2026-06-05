@@ -245,3 +245,60 @@ func toProtoManagedIdentity(identity store.ManagedIdentity) (*zitimanagementv1.M
 	}
 	return protoIdentity, nil
 }
+
+func toProtoDebugServiceState(state *ziti.DebugServiceState) *zitimanagementv1.DebugServiceStateResponse {
+	return &zitimanagementv1.DebugServiceStateResponse{
+		ZitiServiceId:   state.ServiceID,
+		ZitiServiceName: state.ServiceName,
+		RoleAttributes:  append([]string(nil), state.RoleAttributes...),
+		Configs:         toProtoDebugConfigs(state.Configs),
+		ServicePolicies: toProtoDebugServicePolicies(state.ServicePolicies),
+		Terminators:     toProtoDebugTerminators(state.Terminators),
+	}
+}
+
+func toProtoDebugConfigs(configs []ziti.DebugConfig) []*zitimanagementv1.DebugConfig {
+	items := make([]*zitimanagementv1.DebugConfig, len(configs))
+	for i, config := range configs {
+		items[i] = &zitimanagementv1.DebugConfig{
+			Id:             config.ID,
+			Name:           config.Name,
+			ConfigTypeId:   config.ConfigTypeID,
+			ConfigTypeName: config.ConfigTypeName,
+			Json:           config.JSON,
+		}
+	}
+	return items
+}
+
+func toProtoDebugServicePolicies(policies []ziti.DebugServicePolicy) []*zitimanagementv1.DebugServicePolicy {
+	items := make([]*zitimanagementv1.DebugServicePolicy, len(policies))
+	for i, policy := range policies {
+		items[i] = &zitimanagementv1.DebugServicePolicy{
+			Id:            policy.ID,
+			Name:          policy.Name,
+			Type:          policy.Type,
+			IdentityRoles: append([]string(nil), policy.IdentityRoles...),
+			ServiceRoles:  append([]string(nil), policy.ServiceRoles...),
+		}
+	}
+	return items
+}
+
+func toProtoDebugTerminators(terminators []ziti.DebugTerminator) []*zitimanagementv1.DebugTerminator {
+	items := make([]*zitimanagementv1.DebugTerminator, len(terminators))
+	for i, terminator := range terminators {
+		items[i] = &zitimanagementv1.DebugTerminator{
+			Id:          terminator.ID,
+			Identity:    terminator.Identity,
+			RouterId:    terminator.RouterID,
+			RouterName:  terminator.RouterName,
+			Precedence:  terminator.Precedence,
+			Cost:        terminator.Cost,
+			DynamicCost: terminator.DynamicCost,
+			Binding:     terminator.Binding,
+			Address:     terminator.Address,
+		}
+	}
+	return items
+}
