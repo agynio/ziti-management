@@ -1,1 +1,11 @@
-{{- include "service-base.deployment" . -}}
+{{- $values := deepCopy .Values -}}
+{{- $env := list -}}
+{{- range $entry := $values.env -}}
+{{- if eq $entry.name "ZITI_CONTROLLER_URL" -}}
+{{- $env = append $env (mergeOverwrite (deepCopy $entry) (dict "value" $.Values.zitiControllerUrl)) -}}
+{{- else -}}
+{{- $env = append $env $entry -}}
+{{- end -}}
+{{- end -}}
+{{- $values = mergeOverwrite $values (dict "env" $env) -}}
+{{- include "service-base.deployment" (mergeOverwrite (deepCopy .) (dict "Values" $values)) -}}
