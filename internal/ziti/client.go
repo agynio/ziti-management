@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/agynio/ziti-management/internal/id"
@@ -33,6 +34,7 @@ const (
 	roleAttributeAgents  = "agents"
 	roleAttributeApps    = "apps"
 	roleAttributeDevices = "devices"
+	roleAttributeTunnels = "tunnels"
 )
 
 type identityService interface {
@@ -40,21 +42,28 @@ type identityService interface {
 	DeleteIdentity(params *identity.DeleteIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DeleteIdentityOK, error)
 	DetailIdentity(params *identity.DetailIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DetailIdentityOK, error)
 	ListIdentities(params *identity.ListIdentitiesParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.ListIdentitiesOK, error)
+	PatchIdentity(params *identity.PatchIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.PatchIdentityOK, error)
 }
 
 type serviceService interface {
 	CreateService(params *service.CreateServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.CreateServiceCreated, error)
 	DeleteService(params *service.DeleteServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DeleteServiceOK, error)
+	DetailService(params *service.DetailServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DetailServiceOK, error)
+	ListServiceConfig(params *service.ListServiceConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.ListServiceConfigOK, error)
+	ListServices(params *service.ListServicesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.ListServicesOK, error)
+	PatchService(params *service.PatchServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.PatchServiceOK, error)
 }
 
 type configService interface {
 	CreateConfig(params *config.CreateConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.CreateConfigCreated, error)
 	DeleteConfig(params *config.DeleteConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.DeleteConfigOK, error)
+	PatchConfig(params *config.PatchConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.PatchConfigOK, error)
 }
 
 type servicePolicyService interface {
 	CreateServicePolicy(params *service_policy.CreateServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.CreateServicePolicyCreated, error)
 	DeleteServicePolicy(params *service_policy.DeleteServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.DeleteServicePolicyOK, error)
+	ListServicePolicies(params *service_policy.ListServicePoliciesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.ListServicePoliciesOK, error)
 }
 
 type Client struct {
@@ -255,6 +264,84 @@ func (c *Client) createIdentity(ctx context.Context, identityCreate *rest_model.
 	})
 }
 
+func mergeRoleAttributes(base []string, additional []string) rest_model.Attributes {
+	seen := make(map[string]bool, len(base)+len(additional))
+	merged := make(rest_model.Attributes, 0, len(base)+len(additional))
+	for _, attr := range append(base, additional...) {
+		if attr == "" || seen[attr] {
+			continue
+		}
+		seen[attr] = true
+		merged = append(merged, attr)
+	}
+	return merged
+}
+
+func tagsFromMap(values map[string]string) *rest_model.Tags {
+	if len(values) == 0 {
+		return nil
+	}
+	tags := rest_model.Tags{}
+	for key, value := range values {
+		if tags.SubTags == nil {
+			tags.SubTags = rest_model.SubTags{}
+		}
+		tags.SubTags[key] = value
+	}
+	return &tags
+}
+
+func mapFromTags(tags *rest_model.Tags) map[string]string {
+	if tags == nil || len(tags.SubTags) == 0 {
+		return nil
+	}
+	values := make(map[string]string, len(tags.SubTags))
+	for key, value := range tags.SubTags {
+		if stringValue, ok := value.(string); ok {
+			values[key] = stringValue
+		}
+	}
+	return values
+}
+
+func tagFilter(tags map[string]string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	filters := make([]string, 0, len(tags))
+	for key, value := range tags {
+		filters = append(filters, fmt.Sprintf("tags.%s=%s", key, strconv.Quote(value)))
+	}
+	return strings.Join(filters, " and ")
+}
+
+func listPagination(pageSize int32, pageToken string) (int64, int64, error) {
+	limit := int64(pageSize)
+	if limit <= 0 {
+		limit = 100
+	}
+	offset := int64(0)
+	if pageToken != "" {
+		parsed, err := strconv.ParseInt(pageToken, 10, 64)
+		if err != nil || parsed < 0 {
+			return 0, 0, fmt.Errorf("invalid page token")
+		}
+		offset = parsed
+	}
+	return limit, offset, nil
+}
+
+func nextPageToken(meta *rest_model.Meta) string {
+	if meta == nil || meta.Pagination == nil || meta.Pagination.Offset == nil || meta.Pagination.Limit == nil || meta.Pagination.TotalCount == nil {
+		return ""
+	}
+	nextOffset := *meta.Pagination.Offset + *meta.Pagination.Limit
+	if nextOffset >= *meta.Pagination.TotalCount {
+		return ""
+	}
+	return strconv.FormatInt(nextOffset, 10)
+}
+
 func (c *Client) deleteIdentityByExternalID(ctx context.Context, externalID string) error {
 	identityIDs, err := c.listIdentityIDsByExternalID(ctx, externalID)
 	if err != nil {
@@ -328,14 +415,18 @@ func (c *Client) listIdentityIDsByExternalID(ctx context.Context, externalID str
 }
 
 func (c *Client) CreateAgentIdentity(ctx context.Context, agentID, workloadID uuid.UUID) (string, string, error) {
+	return c.CreateAgentIdentityWithOptions(ctx, agentID, workloadID, nil, nil)
+}
+
+func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, workloadID uuid.UUID, additionalRoleAttributes []string, tags map[string]string) (string, string, error) {
 	name := fmt.Sprintf("agent-%s-%s", agentID.String(), id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
-	roleAttrs := rest_model.Attributes{
+	roleAttrs := mergeRoleAttributes([]string{
 		roleAttributeAgents,
 		fmt.Sprintf("agent-%s", agentID.String()),
 		fmt.Sprintf("workload-%s", workloadID.String()),
-	}
+	}, additionalRoleAttributes)
 	externalID := workloadID.String()
 	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
@@ -344,6 +435,7 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID, workloadID uu
 		RoleAttributes: &roleAttrs,
 		ExternalID:     &externalID,
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
+		Tags:           tagsFromMap(tags),
 	}
 
 	zitiID, err := c.createIdentity(ctx, identityCreate)
@@ -359,9 +451,13 @@ func (c *Client) CreateAgentIdentity(ctx context.Context, agentID, workloadID uu
 }
 
 func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error) {
+	return c.CreateDeviceIdentityWithOptions(ctx, userIdentityID, name, nil, nil)
+}
+
+func (c *Client) CreateDeviceIdentityWithOptions(ctx context.Context, userIdentityID uuid.UUID, name string, additionalRoleAttributes []string, tags map[string]string) (string, string, error) {
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
-	roleAttrs := rest_model.Attributes{roleAttributeDevices}
+	roleAttrs := mergeRoleAttributes([]string{roleAttributeDevices}, additionalRoleAttributes)
 	externalID := userIdentityID.String()
 	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
@@ -370,6 +466,7 @@ func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.U
 		RoleAttributes: &roleAttrs,
 		ExternalID:     &externalID,
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
+		Tags:           tagsFromMap(tags),
 	}
 
 	zitiID, err := c.createIdentity(ctx, identityCreate)
@@ -385,12 +482,16 @@ func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.U
 }
 
 func (c *Client) CreateService(ctx context.Context, name string, roleAttributes []string) (string, error) {
-	return c.createService(ctx, name, roleAttributes, nil)
+	return c.createService(ctx, name, roleAttributes, nil, nil)
 }
 
 func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, roleAttributes []string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData) (string, error) {
+	return c.CreateServiceWithConfigsAndTags(ctx, name, roleAttributes, hostV1, interceptV1, nil)
+}
+
+func (c *Client) CreateServiceWithConfigsAndTags(ctx context.Context, name string, roleAttributes []string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData, tags map[string]string) (string, error) {
 	if hostV1 == nil && interceptV1 == nil {
-		return c.CreateService(ctx, name, roleAttributes)
+		return c.createService(ctx, name, roleAttributes, nil, tags)
 	}
 
 	configIDs := make([]string, 0, 2)
@@ -412,7 +513,7 @@ func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, role
 		if len(hostV1.AllowedPortRanges) > 0 {
 			data["allowedPortRanges"] = portRangeConfigData(hostV1.AllowedPortRanges)
 		}
-		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), data)
+		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), data, tags)
 		if err != nil {
 			return "", err
 		}
@@ -424,14 +525,14 @@ func (c *Client) CreateServiceWithConfigs(ctx context.Context, name string, role
 			"addresses":  interceptV1.Addresses,
 			"portRanges": portRangeConfigData(interceptV1.PortRanges),
 		}
-		configID, err := c.createConfig(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), data)
+		configID, err := c.createConfig(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), data, tags)
 		if err != nil {
 			return "", c.cleanupConfigs(ctx, configIDs, err)
 		}
 		configIDs = append(configIDs, configID)
 	}
 
-	serviceID, err := c.createService(ctx, name, roleAttributes, configIDs)
+	serviceID, err := c.createService(ctx, name, roleAttributes, configIDs, tags)
 	if err != nil {
 		return "", c.cleanupConfigs(ctx, configIDs, err)
 	}
@@ -449,7 +550,7 @@ func portRangeConfigData(portRanges []PortRangeData) []map[string]any {
 	return data
 }
 
-func (c *Client) createService(ctx context.Context, name string, roleAttributes []string, configIDs []string) (string, error) {
+func (c *Client) createService(ctx context.Context, name string, roleAttributes []string, configIDs []string, tags map[string]string) (string, error) {
 	encryptionRequired := true
 	params := service.NewCreateServiceParamsWithContext(ctx)
 	params.Service = &rest_model.ServiceCreate{
@@ -457,6 +558,7 @@ func (c *Client) createService(ctx context.Context, name string, roleAttributes 
 		RoleAttributes:     roleAttributes,
 		EncryptionRequired: &encryptionRequired,
 		Configs:            configIDs,
+		Tags:               tagsFromMap(tags),
 	}
 
 	return c.createWithReauth("service", func() (*rest_model.CreateEnvelope, error) {
@@ -472,12 +574,13 @@ func (c *Client) createService(ctx context.Context, name string, roleAttributes 
 	})
 }
 
-func (c *Client) createConfig(ctx context.Context, configTypeID, name string, data map[string]any) (string, error) {
+func (c *Client) createConfig(ctx context.Context, configTypeID, name string, data map[string]any, tags map[string]string) (string, error) {
 	params := config.NewCreateConfigParamsWithContext(ctx)
 	params.Config = &rest_model.ConfigCreate{
 		ConfigTypeID: &configTypeID,
 		Name:         &name,
 		Data:         data,
+		Tags:         tagsFromMap(tags),
 	}
 
 	return c.createWithReauth("config", func() (*rest_model.CreateEnvelope, error) {
@@ -546,6 +649,10 @@ func (c *Client) DeleteService(ctx context.Context, serviceID string) error {
 }
 
 func (c *Client) CreateServicePolicy(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string) (string, error) {
+	return c.CreateServicePolicyWithTags(ctx, name, policyType, identityRoles, serviceRoles, nil)
+}
+
+func (c *Client) CreateServicePolicyWithTags(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string, tags map[string]string) (string, error) {
 	policy := rest_model.DialBind(policyType)
 	semantic := rest_model.SemanticAnyOf
 	params := service_policy.NewCreateServicePolicyParamsWithContext(ctx)
@@ -555,6 +662,7 @@ func (c *Client) CreateServicePolicy(ctx context.Context, name, policyType strin
 		Semantic:      &semantic,
 		IdentityRoles: rest_model.Roles(identityRoles),
 		ServiceRoles:  rest_model.Roles(serviceRoles),
+		Tags:          tagsFromMap(tags),
 	}
 
 	return c.createWithReauth("service policy", func() (*rest_model.CreateEnvelope, error) {
@@ -588,6 +696,363 @@ func (c *Client) DeleteServicePolicy(ctx context.Context, policyID string) error
 	return fmt.Errorf("delete ziti service policy: %w", err)
 }
 
+func (c *Client) CreateTunnelIdentity(ctx context.Context, networkID, tunnelCredentialID string, tags map[string]string) (string, string, error) {
+	name := fmt.Sprintf("tunnel-%s-%s", tunnelCredentialID, id.ShortUUID())
+	identityType := rest_model.IdentityTypeDevice
+	isAdmin := false
+	roleAttrs := rest_model.Attributes{roleAttributeTunnels, fmt.Sprintf("network-%s", networkID)}
+	externalID := tunnelCredentialID
+	identityCreate := &rest_model.IdentityCreate{
+		Name:           &name,
+		Type:           &identityType,
+		IsAdmin:        &isAdmin,
+		RoleAttributes: &roleAttrs,
+		ExternalID:     &externalID,
+		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
+		Tags:           tagsFromMap(tags),
+	}
+
+	zitiID, err := c.createIdentity(ctx, identityCreate)
+	if err != nil {
+		return "", "", err
+	}
+
+	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
+	if err != nil {
+		return "", "", err
+	}
+	return zitiID, jwt, nil
+}
+
+func (c *Client) PatchIdentityRoleAttributes(ctx context.Context, zitiIdentityID string, add, remove []string) error {
+	detail, err := c.detailIdentity(ctx, zitiIdentityID)
+	if err != nil {
+		return err
+	}
+	current := make(map[string]bool, len(*detail.RoleAttributes)+len(add))
+	for _, attr := range *detail.RoleAttributes {
+		current[attr] = true
+	}
+	for _, attr := range remove {
+		delete(current, attr)
+	}
+	for _, attr := range add {
+		if attr != "" {
+			current[attr] = true
+		}
+	}
+	patched := make(rest_model.Attributes, 0, len(current))
+	for attr := range current {
+		patched = append(patched, attr)
+	}
+
+	params := identity.NewPatchIdentityParamsWithContext(ctx)
+	params.ID = zitiIdentityID
+	params.Identity = &rest_model.IdentityPatch{RoleAttributes: &patched}
+	err = c.withReauth(func() error {
+		identityClient := c.identityClient()
+		_, callErr := identityClient.PatchIdentity(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return fmt.Errorf("patch ziti identity role attributes: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) GetIdentityLiveness(ctx context.Context, zitiIdentityID string) (IdentityLiveness, error) {
+	detail, err := c.detailIdentity(ctx, zitiIdentityID)
+	if err != nil {
+		return IdentityLiveness{}, err
+	}
+	return IdentityLiveness{
+		EnrollmentPending:       detail.Enrollment != nil && detail.Enrollment.Ott != nil,
+		HasEdgeRouterConnection: detail.HasEdgeRouterConnection != nil && *detail.HasEdgeRouterConnection,
+	}, nil
+}
+
+func (c *Client) detailIdentity(ctx context.Context, zitiIdentityID string) (*rest_model.IdentityDetail, error) {
+	params := identity.NewDetailIdentityParamsWithContext(ctx)
+	params.ID = zitiIdentityID
+	var detail *identity.DetailIdentityOK
+	err := c.withReauth(func() error {
+		var callErr error
+		identityClient := c.identityClient()
+		detail, callErr = identityClient.DetailIdentity(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("detail ziti identity: %w", err)
+	}
+	if detail.Payload == nil || detail.Payload.Data == nil {
+		return nil, errors.New("detail ziti identity response missing data")
+	}
+	return detail.Payload.Data, nil
+}
+
+func (c *Client) ListIdentitiesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ListResult[OpenZitiIdentity], error) {
+	limit, offset, err := listPagination(pageSize, pageToken)
+	if err != nil {
+		return ListResult[OpenZitiIdentity]{}, err
+	}
+	filter := tagFilter(tags)
+	params := identity.NewListIdentitiesParamsWithContext(ctx)
+	params.Limit = &limit
+	params.Offset = &offset
+	if filter != "" {
+		params.Filter = &filter
+	}
+	var listed *identity.ListIdentitiesOK
+	err = c.withReauth(func() error {
+		var callErr error
+		identityClient := c.identityClient()
+		listed, callErr = identityClient.ListIdentities(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return ListResult[OpenZitiIdentity]{}, fmt.Errorf("list ziti identities: %w", err)
+	}
+	if listed.Payload == nil {
+		return ListResult[OpenZitiIdentity]{}, errors.New("list ziti identities response missing payload")
+	}
+	items := make([]OpenZitiIdentity, 0, len(listed.Payload.Data))
+	for _, identityDetail := range listed.Payload.Data {
+		items = append(items, toOpenZitiIdentity(identityDetail))
+	}
+	return ListResult[OpenZitiIdentity]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+}
+
+func (c *Client) ListServicesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ListResult[OpenZitiService], error) {
+	limit, offset, err := listPagination(pageSize, pageToken)
+	if err != nil {
+		return ListResult[OpenZitiService]{}, err
+	}
+	filter := tagFilter(tags)
+	params := service.NewListServicesParamsWithContext(ctx)
+	params.Limit = &limit
+	params.Offset = &offset
+	if filter != "" {
+		params.Filter = &filter
+	}
+	var listed *service.ListServicesOK
+	err = c.withReauth(func() error {
+		var callErr error
+		serviceClient := c.serviceClient()
+		listed, callErr = serviceClient.ListServices(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return ListResult[OpenZitiService]{}, fmt.Errorf("list ziti services: %w", err)
+	}
+	if listed.Payload == nil {
+		return ListResult[OpenZitiService]{}, errors.New("list ziti services response missing payload")
+	}
+	items := make([]OpenZitiService, 0, len(listed.Payload.Data))
+	for _, serviceDetail := range listed.Payload.Data {
+		items = append(items, toOpenZitiService(serviceDetail))
+	}
+	return ListResult[OpenZitiService]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+}
+
+func (c *Client) ListServicePoliciesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ListResult[OpenZitiServicePolicy], error) {
+	limit, offset, err := listPagination(pageSize, pageToken)
+	if err != nil {
+		return ListResult[OpenZitiServicePolicy]{}, err
+	}
+	filter := tagFilter(tags)
+	params := service_policy.NewListServicePoliciesParamsWithContext(ctx)
+	params.Limit = &limit
+	params.Offset = &offset
+	if filter != "" {
+		params.Filter = &filter
+	}
+	var listed *service_policy.ListServicePoliciesOK
+	err = c.withReauth(func() error {
+		var callErr error
+		servicePolicyClient := c.servicePolicyClient()
+		listed, callErr = servicePolicyClient.ListServicePolicies(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return ListResult[OpenZitiServicePolicy]{}, fmt.Errorf("list ziti service policies: %w", err)
+	}
+	if listed.Payload == nil {
+		return ListResult[OpenZitiServicePolicy]{}, errors.New("list ziti service policies response missing payload")
+	}
+	items := make([]OpenZitiServicePolicy, 0, len(listed.Payload.Data))
+	for _, policyDetail := range listed.Payload.Data {
+		items = append(items, toOpenZitiServicePolicy(policyDetail))
+	}
+	return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+}
+
+func (c *Client) UpdateService(ctx context.Context, serviceID string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData, tags map[string]string, updateTags bool) (OpenZitiService, error) {
+	detail, err := c.detailService(ctx, serviceID)
+	if err != nil {
+		return OpenZitiService{}, err
+	}
+	configIDs := append([]string(nil), detail.Configs...)
+	if hostV1 != nil {
+		data := map[string]any{
+			"protocol":        hostV1.Protocol,
+			"address":         hostV1.Address,
+			"port":            hostV1.Port,
+			"forwardProtocol": hostV1.ForwardProtocol,
+			"forwardAddress":  hostV1.ForwardAddress,
+			"forwardPort":     hostV1.ForwardPort,
+		}
+		if len(hostV1.AllowedProtocols) > 0 {
+			data["allowedProtocols"] = hostV1.AllowedProtocols
+		}
+		if len(hostV1.AllowedAddresses) > 0 {
+			data["allowedAddresses"] = hostV1.AllowedAddresses
+		}
+		if len(hostV1.AllowedPortRanges) > 0 {
+			data["allowedPortRanges"] = portRangeConfigData(hostV1.AllowedPortRanges)
+		}
+		configID, err := c.upsertServiceConfig(ctx, serviceID, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", *detail.Name), data, tags, updateTags)
+		if err != nil {
+			return OpenZitiService{}, err
+		}
+		configIDs = appendMissing(configIDs, configID)
+	}
+	if interceptV1 != nil {
+		data := map[string]any{
+			"protocols":  interceptV1.Protocols,
+			"addresses":  interceptV1.Addresses,
+			"portRanges": portRangeConfigData(interceptV1.PortRanges),
+		}
+		configID, err := c.upsertServiceConfig(ctx, serviceID, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", *detail.Name), data, tags, updateTags)
+		if err != nil {
+			return OpenZitiService{}, err
+		}
+		configIDs = appendMissing(configIDs, configID)
+	}
+	patch := &rest_model.ServicePatch{Configs: configIDs}
+	if updateTags {
+		patch.Tags = tagsFromMap(tags)
+	}
+	params := service.NewPatchServiceParamsWithContext(ctx)
+	params.ID = serviceID
+	params.Service = patch
+	err = c.withReauth(func() error {
+		serviceClient := c.serviceClient()
+		_, callErr := serviceClient.PatchService(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return OpenZitiService{}, fmt.Errorf("patch ziti service: %w", err)
+	}
+	updated, err := c.detailService(ctx, serviceID)
+	if err != nil {
+		return OpenZitiService{}, err
+	}
+	return toOpenZitiService(updated), nil
+}
+
+func (c *Client) detailService(ctx context.Context, serviceID string) (*rest_model.ServiceDetail, error) {
+	params := service.NewDetailServiceParamsWithContext(ctx)
+	params.ID = serviceID
+	var detail *service.DetailServiceOK
+	err := c.withReauth(func() error {
+		var callErr error
+		serviceClient := c.serviceClient()
+		detail, callErr = serviceClient.DetailService(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("detail ziti service: %w", err)
+	}
+	if detail.Payload == nil || detail.Payload.Data == nil {
+		return nil, errors.New("detail ziti service response missing data")
+	}
+	return detail.Payload.Data, nil
+}
+
+func (c *Client) upsertServiceConfig(ctx context.Context, serviceID, configTypeID, name string, data map[string]any, tags map[string]string, updateTags bool) (string, error) {
+	configDetail, err := c.findServiceConfigByType(ctx, serviceID, configTypeID)
+	if err != nil {
+		return "", err
+	}
+	if configDetail == nil {
+		return c.createConfig(ctx, configTypeID, name, data, tags)
+	}
+	patch := &rest_model.ConfigPatch{Data: data, Name: name}
+	if updateTags {
+		patch.Tags = tagsFromMap(tags)
+	}
+	params := config.NewPatchConfigParamsWithContext(ctx)
+	params.ID = *configDetail.ID
+	params.Config = patch
+	err = c.withReauth(func() error {
+		configClient := c.configClient()
+		_, callErr := configClient.PatchConfig(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return "", fmt.Errorf("patch ziti config: %w", err)
+	}
+	return *configDetail.ID, nil
+}
+
+func (c *Client) findServiceConfigByType(ctx context.Context, serviceID, configTypeID string) (*rest_model.ConfigDetail, error) {
+	limit := int64(100)
+	offset := int64(0)
+	for {
+		params := service.NewListServiceConfigParamsWithContext(ctx)
+		params.ID = serviceID
+		params.Limit = &limit
+		params.Offset = &offset
+		var listed *service.ListServiceConfigOK
+		err := c.withReauth(func() error {
+			var callErr error
+			serviceClient := c.serviceClient()
+			listed, callErr = serviceClient.ListServiceConfig(params, nil)
+			return callErr
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list ziti service configs: %w", err)
+		}
+		if listed.Payload == nil {
+			return nil, errors.New("list ziti service configs response missing payload")
+		}
+		for _, configDetail := range listed.Payload.Data {
+			if configDetail != nil && configDetail.ConfigTypeID != nil && *configDetail.ConfigTypeID == configTypeID {
+				return configDetail, nil
+			}
+		}
+		if listed.Payload.Meta == nil || listed.Payload.Meta.Pagination == nil || listed.Payload.Meta.Pagination.TotalCount == nil {
+			return nil, nil
+		}
+		pageCount := int64(len(listed.Payload.Data))
+		if pageCount == 0 || offset+pageCount >= *listed.Payload.Meta.Pagination.TotalCount {
+			return nil, nil
+		}
+		offset += pageCount
+	}
+}
+
+func appendMissing(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func toOpenZitiIdentity(detail *rest_model.IdentityDetail) OpenZitiIdentity {
+	return OpenZitiIdentity{ID: *detail.ID, Name: *detail.Name, RoleAttributes: []string(*detail.RoleAttributes), Tags: mapFromTags(detail.Tags)}
+}
+
+func toOpenZitiService(detail *rest_model.ServiceDetail) OpenZitiService {
+	return OpenZitiService{ID: *detail.ID, Name: *detail.Name, RoleAttributes: []string(*detail.RoleAttributes), Tags: mapFromTags(detail.Tags)}
+}
+
+func toOpenZitiServicePolicy(detail *rest_model.ServicePolicyDetail) OpenZitiServicePolicy {
+	return OpenZitiServicePolicy{ID: *detail.ID, Name: *detail.Name, Type: string(*detail.Type), IdentityRoles: []string(detail.IdentityRoles), ServiceRoles: []string(detail.ServiceRoles), Tags: mapFromTags(detail.Tags)}
+}
+
 func (c *Client) CreateAndEnrollServiceIdentity(ctx context.Context, name string, roleAttributes []string) (string, []byte, error) {
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
@@ -617,10 +1082,14 @@ func (c *Client) createAndEnrollIdentity(ctx context.Context, identityCreate *re
 }
 
 func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, error) {
+	return c.CreateAndEnrollAppIdentityWithOptions(ctx, appID, slug, nil, nil)
+}
+
+func (c *Client) CreateAndEnrollAppIdentityWithOptions(ctx context.Context, appID uuid.UUID, slug string, additionalRoleAttributes []string, tags map[string]string) (string, []byte, error) {
 	name := fmt.Sprintf("app-%s-%s", slug, id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
-	roleAttrs := rest_model.Attributes{roleAttributeApps}
+	roleAttrs := mergeRoleAttributes([]string{roleAttributeApps}, additionalRoleAttributes)
 	externalID := appID.String()
 	if err := c.deleteIdentityByExternalID(ctx, externalID); err != nil {
 		return "", nil, fmt.Errorf("delete existing ziti identity: %w", err)
@@ -632,12 +1101,17 @@ func (c *Client) CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID
 		RoleAttributes: &roleAttrs,
 		ExternalID:     &externalID,
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
+		Tags:           tagsFromMap(tags),
 	}
 
 	return c.createAndEnrollIdentity(ctx, identityCreate)
 }
 
 func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uuid.UUID, roleAttributes []string) (string, []byte, error) {
+	return c.CreateAndEnrollRunnerIdentityWithTags(ctx, runnerID, roleAttributes, nil)
+}
+
+func (c *Client) CreateAndEnrollRunnerIdentityWithTags(ctx context.Context, runnerID uuid.UUID, roleAttributes []string, tags map[string]string) (string, []byte, error) {
 	name := fmt.Sprintf("runner-%s-%s", runnerID.String(), id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
@@ -653,6 +1127,7 @@ func (c *Client) CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uui
 		RoleAttributes: &roleAttrs,
 		ExternalID:     &externalID,
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
+		Tags:           tagsFromMap(tags),
 	}
 
 	return c.createAndEnrollIdentity(ctx, identityCreate)

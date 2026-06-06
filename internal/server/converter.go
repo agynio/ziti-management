@@ -245,3 +245,43 @@ func toProtoManagedIdentity(identity store.ManagedIdentity) (*zitimanagementv1.M
 	}
 	return protoIdentity, nil
 }
+
+func toProtoOpenZitiIdentity(identity ziti.OpenZitiIdentity) *zitimanagementv1.OpenZitiIdentity {
+	return &zitimanagementv1.OpenZitiIdentity{
+		ZitiIdentityId: identity.ID,
+		Name:           identity.Name,
+		RoleAttributes: identity.RoleAttributes,
+		Tags:           identity.Tags,
+	}
+}
+
+func toProtoOpenZitiService(service ziti.OpenZitiService) *zitimanagementv1.OpenZitiService {
+	return &zitimanagementv1.OpenZitiService{
+		ZitiServiceId:  service.ID,
+		Name:           service.Name,
+		RoleAttributes: service.RoleAttributes,
+		Tags:           service.Tags,
+	}
+}
+
+func toProtoOpenZitiServicePolicy(policy ziti.OpenZitiServicePolicy) *zitimanagementv1.OpenZitiServicePolicy {
+	return &zitimanagementv1.OpenZitiServicePolicy{
+		ZitiServicePolicyId: policy.ID,
+		Name:                policy.Name,
+		Type:                toProtoServicePolicyType(policy.Type),
+		IdentityRoles:       policy.IdentityRoles,
+		ServiceRoles:        policy.ServiceRoles,
+		Tags:                policy.Tags,
+	}
+}
+
+func toProtoServicePolicyType(value string) zitimanagementv1.ServicePolicyType {
+	switch value {
+	case "Bind":
+		return zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_BIND
+	case "Dial":
+		return zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_DIAL
+	default:
+		return zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_UNSPECIFIED
+	}
+}

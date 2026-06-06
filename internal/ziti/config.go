@@ -27,3 +27,36 @@ type PortRangeData struct {
 	Low  int32
 	High int32
 }
+
+type IdentityLiveness struct {
+	EnrollmentPending       bool
+	HasEdgeRouterConnection bool
+}
+
+type OpenZitiIdentity struct {
+	ID             string
+	Name           string
+	RoleAttributes []string
+	Tags           map[string]string
+}
+
+type OpenZitiService struct {
+	ID             string
+	Name           string
+	RoleAttributes []string
+	Tags           map[string]string
+}
+
+type OpenZitiServicePolicy struct {
+	ID            string
+	Name          string
+	Type          string
+	IdentityRoles []string
+	ServiceRoles  []string
+	Tags          map[string]string
+}
+
+type ListResult[T any] struct {
+	Items         []T
+	NextPageToken string
+}

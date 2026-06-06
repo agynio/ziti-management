@@ -88,16 +88,28 @@ func (f *fakeZitiClient) CreateAgentIdentity(_ context.Context, agentID, workloa
 	return fmt.Sprintf("agent-ziti-%d", len(f.agentCalls)), fmt.Sprintf("agent-jwt-%d", len(f.agentCalls)), nil
 }
 
+func (f *fakeZitiClient) CreateAgentIdentityWithOptions(ctx context.Context, agentID, workloadID uuid.UUID, _ []string, _ map[string]string) (string, string, error) {
+	return f.CreateAgentIdentity(ctx, agentID, workloadID)
+}
+
 func (f *fakeZitiClient) CreateAndEnrollAppIdentity(_ context.Context, _ uuid.UUID, _ string) (string, []byte, error) {
 	f.appCount++
 	zitiID := fmt.Sprintf("app-ziti-%d", f.appCount)
 	return zitiID, []byte(fmt.Sprintf("app-json-%d", f.appCount)), nil
 }
 
+func (f *fakeZitiClient) CreateAndEnrollAppIdentityWithOptions(ctx context.Context, appID uuid.UUID, slug string, _ []string, _ map[string]string) (string, []byte, error) {
+	return f.CreateAndEnrollAppIdentity(ctx, appID, slug)
+}
+
 func (f *fakeZitiClient) CreateAndEnrollRunnerIdentity(_ context.Context, _ uuid.UUID, _ []string) (string, []byte, error) {
 	f.runnerCount++
 	zitiID := fmt.Sprintf("runner-ziti-%d", f.runnerCount)
 	return zitiID, []byte(fmt.Sprintf("runner-json-%d", f.runnerCount)), nil
+}
+
+func (f *fakeZitiClient) CreateAndEnrollRunnerIdentityWithTags(ctx context.Context, runnerID uuid.UUID, roleAttributes []string, _ map[string]string) (string, []byte, error) {
+	return f.CreateAndEnrollRunnerIdentity(ctx, runnerID, roleAttributes)
 }
 
 func (f *fakeZitiClient) CreateAndEnrollServiceIdentity(_ context.Context, _ string, _ []string) (string, []byte, error) {
@@ -112,12 +124,28 @@ func (f *fakeZitiClient) CreateServiceWithConfigs(_ context.Context, _ string, _
 	return "", errors.New("unexpected create service with configs")
 }
 
+func (f *fakeZitiClient) CreateServiceWithConfigsAndTags(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData, _ map[string]string) (string, error) {
+	return f.CreateServiceWithConfigs(ctx, name, roleAttributes, hostV1, interceptV1)
+}
+
 func (f *fakeZitiClient) CreateServicePolicy(_ context.Context, _ string, _ string, _ []string, _ []string) (string, error) {
 	return "", errors.New("unexpected create service policy")
 }
 
+func (f *fakeZitiClient) CreateServicePolicyWithTags(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string, _ map[string]string) (string, error) {
+	return f.CreateServicePolicy(ctx, name, policyType, identityRoles, serviceRoles)
+}
+
 func (f *fakeZitiClient) CreateDeviceIdentity(_ context.Context, _ uuid.UUID, _ string) (string, string, error) {
 	return "", "", errors.New("unexpected create device identity")
+}
+
+func (f *fakeZitiClient) CreateDeviceIdentityWithOptions(ctx context.Context, userIdentityID uuid.UUID, name string, _ []string, _ map[string]string) (string, string, error) {
+	return f.CreateDeviceIdentity(ctx, userIdentityID, name)
+}
+
+func (f *fakeZitiClient) CreateTunnelIdentity(_ context.Context, _, _ string, _ map[string]string) (string, string, error) {
+	return "", "", errors.New("unexpected create tunnel identity")
 }
 
 func (f *fakeZitiClient) DeleteIdentity(_ context.Context, zitiID string) error {
@@ -132,6 +160,30 @@ func (f *fakeZitiClient) DeleteService(_ context.Context, serviceID string) erro
 
 func (f *fakeZitiClient) DeleteServicePolicy(_ context.Context, _ string) error {
 	return nil
+}
+
+func (f *fakeZitiClient) PatchIdentityRoleAttributes(_ context.Context, _ string, _, _ []string) error {
+	return errors.New("unexpected patch identity role attributes")
+}
+
+func (f *fakeZitiClient) GetIdentityLiveness(_ context.Context, _ string) (ziti.IdentityLiveness, error) {
+	return ziti.IdentityLiveness{}, errors.New("unexpected get identity liveness")
+}
+
+func (f *fakeZitiClient) ListServicesByTag(_ context.Context, _ map[string]string, _ int32, _ string) (ziti.ListResult[ziti.OpenZitiService], error) {
+	return ziti.ListResult[ziti.OpenZitiService]{}, errors.New("unexpected list services by tag")
+}
+
+func (f *fakeZitiClient) ListIdentitiesByTag(_ context.Context, _ map[string]string, _ int32, _ string) (ziti.ListResult[ziti.OpenZitiIdentity], error) {
+	return ziti.ListResult[ziti.OpenZitiIdentity]{}, errors.New("unexpected list identities by tag")
+}
+
+func (f *fakeZitiClient) ListServicePoliciesByTag(_ context.Context, _ map[string]string, _ int32, _ string) (ziti.ListResult[ziti.OpenZitiServicePolicy], error) {
+	return ziti.ListResult[ziti.OpenZitiServicePolicy]{}, errors.New("unexpected list service policies by tag")
+}
+
+func (f *fakeZitiClient) UpdateService(_ context.Context, _ string, _ *ziti.HostV1ConfigData, _ *ziti.InterceptV1ConfigData, _ map[string]string, _ bool) (ziti.OpenZitiService, error) {
+	return ziti.OpenZitiService{}, errors.New("unexpected update service")
 }
 
 func TestCreateAppIdentityAllowsReenroll(t *testing.T) {
