@@ -5,15 +5,20 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-openapi/runtime"
+	"github.com/go-openapi/strfmt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/openziti/edge-api/rest_management_api_client/config"
 	"github.com/openziti/edge-api/rest_management_api_client/identity"
 	"github.com/openziti/edge-api/rest_management_api_client/service"
 	"github.com/openziti/edge-api/rest_management_api_client/service_policy"
 	"github.com/openziti/edge-api/rest_model"
+	sdkziti "github.com/openziti/sdk-golang/ziti"
 )
 
 type fakeIdentityService struct {
@@ -54,6 +59,10 @@ func (f *fakeIdentityService) ListIdentities(params *identity.ListIdentitiesPara
 type fakeServiceService struct {
 	createServiceFunc func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error)
 	deleteServiceFunc func(params *service.DeleteServiceParams) (*service.DeleteServiceOK, error)
+	detailServiceFunc func(params *service.DetailServiceParams) (*service.DetailServiceOK, error)
+	listConfigFunc    func(params *service.ListServiceConfigParams) (*service.ListServiceConfigOK, error)
+	listServicesFunc  func(params *service.ListServicesParams) (*service.ListServicesOK, error)
+	patchServiceFunc  func(params *service.PatchServiceParams) (*service.PatchServiceOK, error)
 }
 
 func (f *fakeServiceService) CreateService(params *service.CreateServiceParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.CreateServiceCreated, error) {
@@ -70,9 +79,38 @@ func (f *fakeServiceService) DeleteService(params *service.DeleteServiceParams, 
 	return f.deleteServiceFunc(params)
 }
 
+func (f *fakeServiceService) DetailService(params *service.DetailServiceParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.DetailServiceOK, error) {
+	if f.detailServiceFunc == nil {
+		return nil, errors.New("detail service not stubbed")
+	}
+	return f.detailServiceFunc(params)
+}
+
+func (f *fakeServiceService) ListServiceConfig(params *service.ListServiceConfigParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.ListServiceConfigOK, error) {
+	if f.listConfigFunc == nil {
+		return nil, errors.New("list service config not stubbed")
+	}
+	return f.listConfigFunc(params)
+}
+
+func (f *fakeServiceService) ListServices(params *service.ListServicesParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.ListServicesOK, error) {
+	if f.listServicesFunc == nil {
+		return nil, errors.New("list services not stubbed")
+	}
+	return f.listServicesFunc(params)
+}
+
+func (f *fakeServiceService) PatchService(params *service.PatchServiceParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.PatchServiceOK, error) {
+	if f.patchServiceFunc == nil {
+		return nil, errors.New("patch service not stubbed")
+	}
+	return f.patchServiceFunc(params)
+}
+
 type fakeConfigService struct {
 	createConfigFunc func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error)
 	deleteConfigFunc func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error)
+	patchConfigFunc  func(params *config.PatchConfigParams) (*config.PatchConfigOK, error)
 }
 
 func (f *fakeConfigService) CreateConfig(params *config.CreateConfigParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.CreateConfigCreated, error) {
@@ -89,9 +127,17 @@ func (f *fakeConfigService) DeleteConfig(params *config.DeleteConfigParams, _ ru
 	return f.deleteConfigFunc(params)
 }
 
+func (f *fakeConfigService) PatchConfig(params *config.PatchConfigParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.PatchConfigOK, error) {
+	if f.patchConfigFunc == nil {
+		return nil, errors.New("patch config not stubbed")
+	}
+	return f.patchConfigFunc(params)
+}
+
 type fakeServicePolicyService struct {
 	createServicePolicyFunc func(params *service_policy.CreateServicePolicyParams) (*service_policy.CreateServicePolicyCreated, error)
 	deleteServicePolicyFunc func(params *service_policy.DeleteServicePolicyParams) (*service_policy.DeleteServicePolicyOK, error)
+	listServicePoliciesFunc func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error)
 }
 
 func (f *fakeServicePolicyService) CreateServicePolicy(params *service_policy.CreateServicePolicyParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.CreateServicePolicyCreated, error) {
@@ -106,6 +152,13 @@ func (f *fakeServicePolicyService) DeleteServicePolicy(params *service_policy.De
 		return nil, errors.New("delete service policy not stubbed")
 	}
 	return f.deleteServicePolicyFunc(params)
+}
+
+func (f *fakeServicePolicyService) ListServicePolicies(params *service_policy.ListServicePoliciesParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.ListServicePoliciesOK, error) {
+	if f.listServicePoliciesFunc == nil {
+		return nil, errors.New("list service policies not stubbed")
+	}
+	return f.listServicePoliciesFunc(params)
 }
 
 func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
@@ -143,6 +196,306 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 	}
 	if token != jwt {
 		t.Fatalf("expected jwt %q, got %q", jwt, token)
+	}
+}
+
+func TestCreateAgentIdentityWithOptionsAddsRolesAndTags(t *testing.T) {
+	ctx := context.Background()
+	agentID := uuid.New()
+	workloadID := uuid.New()
+	fake := &fakeIdentityService{
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			assertCreateAgentRoleAttributes(t, params, agentID, workloadID, "group-one")
+			assertTags(t, params.Identity.Tags, map[string]string{"network": "net-1"})
+			return createIdentityResponse("identity-id"), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponse("jwt-token"), nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	_, _, err := client.CreateAgentIdentityWithOptions(ctx, agentID, workloadID, []string{"group-one"}, map[string]string{"network": "net-1"})
+	if err != nil {
+		t.Fatalf("create agent identity: %v", err)
+	}
+}
+
+func TestCreateTunnelIdentityCreatesTunnelRolesAndTags(t *testing.T) {
+	ctx := context.Background()
+	expiresAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	fake := &fakeIdentityService{
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			if params == nil || params.Identity == nil || params.Identity.RoleAttributes == nil {
+				t.Fatalf("expected role attributes")
+			}
+			expectedRoles := rest_model.Attributes{"tunnels", "network-network-1"}
+			if !reflect.DeepEqual(*params.Identity.RoleAttributes, expectedRoles) {
+				t.Fatalf("unexpected role attributes: %#v", params.Identity.RoleAttributes)
+			}
+			assertTags(t, params.Identity.Tags, map[string]string{"owner": "networks"})
+			return createIdentityResponse("tunnel-id"), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponseWithExpiry("tunnel-jwt", expiresAt), nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	zitiID, jwt, err := client.CreateTunnelIdentity(ctx, "network-1", "credential-1", map[string]string{"owner": "networks"})
+	if err != nil {
+		t.Fatalf("create tunnel identity: %v", err)
+	}
+	if zitiID != "tunnel-id" || jwt.Token != "tunnel-jwt" || !jwt.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("unexpected create result %q %q", zitiID, jwt)
+	}
+}
+
+func TestCreateTunnelIdentityUsesJWTExpirationWhenControllerExpiryMissing(t *testing.T) {
+	ctx := context.Background()
+	expiresAt := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
+	stubEnrollmentFuncs(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
+		if token != "tunnel-jwt" {
+			t.Fatalf("unexpected token: %s", token)
+		}
+		return &sdkziti.EnrollmentClaims{RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(expiresAt)}}, nil, nil
+	}, nil)
+	fake := &fakeIdentityService{
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			return createIdentityResponse("tunnel-id"), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{Enrollment: &rest_model.IdentityEnrollments{
+				Ott: &rest_model.IdentityEnrollmentsOtt{JWT: "tunnel-jwt"},
+			}}}}, nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	_, jwt, err := client.CreateTunnelIdentity(ctx, "network-1", "credential-1", nil)
+	if err != nil {
+		t.Fatalf("create tunnel identity: %v", err)
+	}
+	if !jwt.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expected expiry %s, got %s", expiresAt, jwt.ExpiresAt)
+	}
+}
+
+func TestPatchIdentityRoleAttributesUnsupported(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeIdentityService{
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			t.Fatalf("detail identity should not be called for unsupported delta patch")
+			return nil, nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-new"}, []string{"group-old"})
+	if !errors.Is(err, ErrRoleAttributePatchUnsupported) {
+		t.Fatalf("expected unsupported error, got %v", err)
+	}
+}
+
+func TestGetIdentityLivenessConvertsFields(t *testing.T) {
+	ctx := context.Background()
+	connected := true
+	fake := &fakeIdentityService{
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{
+				Enrollment:              &rest_model.IdentityEnrollments{Ott: &rest_model.IdentityEnrollmentsOtt{JWT: "jwt"}},
+				HasEdgeRouterConnection: &connected,
+			}}}, nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	liveness, err := client.GetIdentityLiveness(ctx, "identity-id")
+	if err != nil {
+		t.Fatalf("get identity liveness: %v", err)
+	}
+	if !liveness.EnrollmentPending || !liveness.HasEdgeRouterConnection {
+		t.Fatalf("unexpected liveness: %#v", liveness)
+	}
+}
+
+func TestListServicesByTagConvertsRequestAndResponse(t *testing.T) {
+	ctx := context.Background()
+	serviceID := "service-id"
+	serviceName := "service-name"
+	roles := rest_model.Attributes{"role-one"}
+	fake := &fakeServiceService{
+		listServicesFunc: func(params *service.ListServicesParams) (*service.ListServicesOK, error) {
+			if params == nil || params.Filter == nil || !strings.Contains(*params.Filter, "tags.owner=") {
+				t.Fatalf("unexpected filter: %#v", params)
+			}
+			if params.Limit == nil || *params.Limit != 10 || params.Offset == nil || *params.Offset != 20 {
+				t.Fatalf("unexpected pagination: %#v", params)
+			}
+			return listServicesResponse([]*rest_model.ServiceDetail{{
+				BaseEntity:     rest_model.BaseEntity{ID: &serviceID, Tags: tagsFromMap(map[string]string{"owner": "networks"})},
+				Name:           &serviceName,
+				RoleAttributes: &roles,
+			}}, 10, 20, 31), nil
+		},
+	}
+
+	client := &Client{service: fake}
+	result, err := client.ListServicesByTag(ctx, map[string]string{"owner": "networks"}, 10, "20")
+	if err != nil {
+		t.Fatalf("list services by tag: %v", err)
+	}
+	if result.NextPageToken != "30" || len(result.Items) != 1 || result.Items[0].ID != serviceID {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestListIdentitiesByTagConvertsRequestAndResponse(t *testing.T) {
+	ctx := context.Background()
+	identityID := "identity-id"
+	identityName := "identity-name"
+	roles := rest_model.Attributes{"role-one"}
+	fake := &fakeIdentityService{
+		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
+			if params == nil || params.Filter == nil || !strings.Contains(*params.Filter, "tags.owner=") {
+				t.Fatalf("unexpected filter: %#v", params)
+			}
+			return listIdentityDetailsResponse([]*rest_model.IdentityDetail{{
+				BaseEntity:     rest_model.BaseEntity{ID: &identityID, Tags: tagsFromMap(map[string]string{"owner": "networks"})},
+				Name:           &identityName,
+				RoleAttributes: &roles,
+			}}, 50, 0, 1), nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	result, err := client.ListIdentitiesByTag(ctx, map[string]string{"owner": "networks"}, 0, "")
+	if err != nil {
+		t.Fatalf("list identities by tag: %v", err)
+	}
+	if result.NextPageToken != "" || len(result.Items) != 1 || result.Items[0].ID != identityID {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestListServicePoliciesByTagConvertsRequestAndResponse(t *testing.T) {
+	ctx := context.Background()
+	policyID := "policy-id"
+	policyName := "policy-name"
+	policyType := rest_model.DialBindDial
+	fake := &fakeServicePolicyService{
+		listServicePoliciesFunc: func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error) {
+			if params == nil || params.Filter == nil || !strings.Contains(*params.Filter, "tags.owner=") {
+				t.Fatalf("unexpected filter: %#v", params)
+			}
+			return listServicePoliciesResponse([]*rest_model.ServicePolicyDetail{{
+				BaseEntity:    rest_model.BaseEntity{ID: &policyID, Tags: tagsFromMap(map[string]string{"owner": "networks"})},
+				Name:          &policyName,
+				Type:          &policyType,
+				IdentityRoles: rest_model.Roles{"#identity"},
+				ServiceRoles:  rest_model.Roles{"#service"},
+			}}, 10, 0, 1), nil
+		},
+	}
+
+	client := &Client{servicePolicy: fake}
+	result, err := client.ListServicePoliciesByTag(ctx, map[string]string{"owner": "networks"}, 10, "")
+	if err != nil {
+		t.Fatalf("list service policies by tag: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].ID != policyID || result.Items[0].Type != "Dial" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestUpdateServicePatchesConfigsAndTags(t *testing.T) {
+	ctx := context.Background()
+	serviceID := "service-id"
+	serviceName := "service-name"
+	roles := rest_model.Attributes{"role-one"}
+	call := 0
+	fakeService := &fakeServiceService{
+		detailServiceFunc: func(params *service.DetailServiceParams) (*service.DetailServiceOK, error) {
+			call++
+			return &service.DetailServiceOK{Payload: &rest_model.DetailServiceEnvelope{Data: &rest_model.ServiceDetail{
+				BaseEntity:     rest_model.BaseEntity{ID: &serviceID, Tags: tagsFromMap(map[string]string{"owner": "networks"})},
+				Name:           &serviceName,
+				RoleAttributes: &roles,
+				Configs:        []string{"existing-config"},
+			}}}, nil
+		},
+		listConfigFunc: func(params *service.ListServiceConfigParams) (*service.ListServiceConfigOK, error) {
+			return listConfigsResponse(nil, 100, 0, 0), nil
+		},
+		patchServiceFunc: func(params *service.PatchServiceParams) (*service.PatchServiceOK, error) {
+			if params == nil || params.Service == nil {
+				t.Fatalf("expected patch service")
+			}
+			if !reflect.DeepEqual(params.Service.Configs, []string{"existing-config", "host-config"}) {
+				t.Fatalf("unexpected configs: %#v", params.Service.Configs)
+			}
+			assertTags(t, params.Service.Tags, map[string]string{"owner": "networks"})
+			return &service.PatchServiceOK{}, nil
+		},
+	}
+	fakeConfig := &fakeConfigService{
+		createConfigFunc: func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error) {
+			if params == nil || params.Config == nil {
+				t.Fatalf("expected config create")
+			}
+			assertTags(t, params.Config.Tags, map[string]string{"owner": "networks"})
+			return createConfigResponse("host-config"), nil
+		},
+	}
+
+	client := &Client{service: fakeService, config: fakeConfig}
+	updated, err := client.UpdateService(ctx, serviceID, &HostV1ConfigData{Protocol: "tcp", Address: "127.0.0.1", Port: 8080}, nil, map[string]string{"owner": "networks"}, true)
+	if err != nil {
+		t.Fatalf("update service: %v", err)
+	}
+	if call != 2 || updated.ID != serviceID {
+		t.Fatalf("unexpected update result: call=%d updated=%#v", call, updated)
+	}
+}
+
+func TestUpdateServiceTagOnlyDoesNotPatchConfigs(t *testing.T) {
+	ctx := context.Background()
+	serviceID := "service-id"
+	serviceName := "service-name"
+	roles := rest_model.Attributes{"role-one"}
+	fakeService := &fakeServiceService{
+		detailServiceFunc: func(params *service.DetailServiceParams) (*service.DetailServiceOK, error) {
+			return &service.DetailServiceOK{Payload: &rest_model.DetailServiceEnvelope{Data: &rest_model.ServiceDetail{
+				BaseEntity:     rest_model.BaseEntity{ID: &serviceID, Tags: tagsFromMap(map[string]string{"owner": "networks"})},
+				Name:           &serviceName,
+				RoleAttributes: &roles,
+			}}}, nil
+		},
+		listConfigFunc: func(params *service.ListServiceConfigParams) (*service.ListServiceConfigOK, error) {
+			t.Fatalf("list service config should not be called for tag-only update")
+			return nil, nil
+		},
+		patchServiceFunc: func(params *service.PatchServiceParams) (*service.PatchServiceOK, error) {
+			if params == nil || params.Service == nil {
+				t.Fatalf("expected patch service")
+			}
+			if params.Service.Configs != nil {
+				t.Fatalf("tag-only update must not patch configs: %#v", params.Service.Configs)
+			}
+			assertTags(t, params.Service.Tags, map[string]string{"owner": "networks"})
+			return &service.PatchServiceOK{}, nil
+		},
+	}
+	fakeConfig := &fakeConfigService{
+		createConfigFunc: func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error) {
+			t.Fatalf("create config should not be called for tag-only update")
+			return nil, nil
+		},
+	}
+
+	client := &Client{service: fakeService, config: fakeConfig}
+	if _, err := client.UpdateService(ctx, serviceID, nil, nil, map[string]string{"owner": "networks"}, true); err != nil {
+		t.Fatalf("update service: %v", err)
 	}
 }
 
@@ -573,7 +926,7 @@ func assertCreateExternalID(t *testing.T, params *identity.CreateIdentityParams,
 	}
 }
 
-func assertCreateAgentRoleAttributes(t *testing.T, params *identity.CreateIdentityParams, agentID, workloadID uuid.UUID) {
+func assertCreateAgentRoleAttributes(t *testing.T, params *identity.CreateIdentityParams, agentID, workloadID uuid.UUID, additional ...string) {
 	t.Helper()
 	if params == nil || params.Identity == nil || params.Identity.RoleAttributes == nil {
 		t.Fatalf("expected create identity role attributes")
@@ -583,8 +936,35 @@ func assertCreateAgentRoleAttributes(t *testing.T, params *identity.CreateIdenti
 		"agent-" + agentID.String(),
 		"workload-" + workloadID.String(),
 	}
+	expectedRoleAttributes = append(expectedRoleAttributes, additional...)
 	if !reflect.DeepEqual(*params.Identity.RoleAttributes, expectedRoleAttributes) {
 		t.Fatalf("unexpected role attributes: %#v", params.Identity.RoleAttributes)
+	}
+}
+
+func assertTags(t *testing.T, tags *rest_model.Tags, expected map[string]string) {
+	t.Helper()
+	if tags == nil {
+		t.Fatalf("expected tags")
+	}
+	if !reflect.DeepEqual(mapFromTags(tags), expected) {
+		t.Fatalf("unexpected tags: %#v", tags)
+	}
+}
+
+func assertSameStrings(t *testing.T, actual, expected []string) {
+	t.Helper()
+	if len(actual) != len(expected) {
+		t.Fatalf("expected %v, got %v", expected, actual)
+	}
+	actualSet := map[string]bool{}
+	for _, value := range actual {
+		actualSet[value] = true
+	}
+	for _, value := range expected {
+		if !actualSet[value] {
+			t.Fatalf("expected %v, got %v", expected, actual)
+		}
 	}
 }
 
@@ -593,8 +973,14 @@ func createIdentityResponse(identityID string) *identity.CreateIdentityCreated {
 }
 
 func detailIdentityResponse(jwt string) *identity.DetailIdentityOK {
+	expiresAt := time.Now().Add(time.Hour).UTC()
+	return detailIdentityResponseWithExpiry(jwt, expiresAt)
+}
+
+func detailIdentityResponseWithExpiry(jwt string, expiresAt time.Time) *identity.DetailIdentityOK {
+	expires := strfmt.DateTime(expiresAt)
 	return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{Enrollment: &rest_model.IdentityEnrollments{
-		Ott: &rest_model.IdentityEnrollmentsOtt{JWT: jwt},
+		Ott: &rest_model.IdentityEnrollmentsOtt{JWT: jwt, ExpiresAt: expires},
 	}}}}
 }
 
@@ -686,4 +1072,44 @@ func listIdentitiesResponse(identityIDs []string, limit, offset, total int64) *i
 			},
 		},
 	}
+}
+
+func listIdentityDetailsResponse(details []*rest_model.IdentityDetail, limit, offset, total int64) *identity.ListIdentitiesOK {
+	return &identity.ListIdentitiesOK{
+		Payload: &rest_model.ListIdentitiesEnvelope{
+			Data: details,
+			Meta: paginationMeta(limit, offset, total),
+		},
+	}
+}
+
+func listServicesResponse(details []*rest_model.ServiceDetail, limit, offset, total int64) *service.ListServicesOK {
+	return &service.ListServicesOK{
+		Payload: &rest_model.ListServicesEnvelope{
+			Data: details,
+			Meta: paginationMeta(limit, offset, total),
+		},
+	}
+}
+
+func listServicePoliciesResponse(details []*rest_model.ServicePolicyDetail, limit, offset, total int64) *service_policy.ListServicePoliciesOK {
+	return &service_policy.ListServicePoliciesOK{
+		Payload: &rest_model.ListServicePoliciesEnvelope{
+			Data: details,
+			Meta: paginationMeta(limit, offset, total),
+		},
+	}
+}
+
+func listConfigsResponse(details []*rest_model.ConfigDetail, limit, offset, total int64) *service.ListServiceConfigOK {
+	return &service.ListServiceConfigOK{
+		Payload: &rest_model.ListConfigsEnvelope{
+			Data: details,
+			Meta: paginationMeta(limit, offset, total),
+		},
+	}
+}
+
+func paginationMeta(limit, offset, total int64) *rest_model.Meta {
+	return &rest_model.Meta{Pagination: &rest_model.Pagination{Limit: &limit, Offset: &offset, TotalCount: &total}}
 }

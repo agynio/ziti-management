@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/agynio/ziti-management/internal/id"
 	"github.com/agynio/ziti-management/internal/store"
@@ -32,16 +33,29 @@ type managedIdentityStore interface {
 
 type zitiClient interface {
 	CreateAgentIdentity(ctx context.Context, agentID, workloadID uuid.UUID) (string, string, error)
+	CreateAgentIdentityWithOptions(ctx context.Context, agentID, workloadID uuid.UUID, additionalRoleAttributes []string, tags map[string]string) (string, string, error)
 	CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, error)
+	CreateAndEnrollAppIdentityWithOptions(ctx context.Context, appID uuid.UUID, slug string, additionalRoleAttributes []string, tags map[string]string) (string, []byte, error)
 	CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uuid.UUID, roleAttributes []string) (string, []byte, error)
+	CreateAndEnrollRunnerIdentityWithTags(ctx context.Context, runnerID uuid.UUID, roleAttributes []string, tags map[string]string) (string, []byte, error)
 	CreateAndEnrollServiceIdentity(ctx context.Context, name string, roleAttributes []string) (string, []byte, error)
 	CreateService(ctx context.Context, name string, roleAttributes []string) (string, error)
 	CreateServiceWithConfigs(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData) (string, error)
+	CreateServiceWithConfigsAndTags(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData, tags map[string]string) (string, error)
 	CreateServicePolicy(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string) (string, error)
+	CreateServicePolicyWithTags(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string, tags map[string]string) (string, error)
 	CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error)
+	CreateDeviceIdentityWithOptions(ctx context.Context, userIdentityID uuid.UUID, name string, additionalRoleAttributes []string, tags map[string]string) (string, string, error)
+	CreateTunnelIdentity(ctx context.Context, networkID, tunnelCredentialID string, tags map[string]string) (string, ziti.EnrollmentJWT, error)
 	DeleteIdentity(ctx context.Context, zitiIdentityID string) error
 	DeleteService(ctx context.Context, serviceID string) error
 	DeleteServicePolicy(ctx context.Context, policyID string) error
+	PatchIdentityRoleAttributes(ctx context.Context, zitiIdentityID string, add, remove []string) error
+	GetIdentityLiveness(ctx context.Context, zitiIdentityID string) (ziti.IdentityLiveness, error)
+	ListServicesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiService], error)
+	ListIdentitiesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiIdentity], error)
+	ListServicePoliciesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiServicePolicy], error)
+	UpdateService(ctx context.Context, serviceID string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData, tags map[string]string, updateTags bool) (ziti.OpenZitiService, error)
 }
 
 type Server struct {
@@ -78,7 +92,7 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 		return nil, status.Errorf(codes.InvalidArgument, "workload_id: %v", err)
 	}
 
-	zitiID, jwt, err := s.ziti.CreateAgentIdentity(ctx, agentID, workloadID)
+	zitiID, jwt, err := s.ziti.CreateAgentIdentityWithOptions(ctx, agentID, workloadID, req.GetAdditionalRoleAttributes(), req.GetTags())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create ziti identity: %v", err)
 	}
@@ -111,7 +125,7 @@ func (s *Server) CreateAppIdentity(ctx context.Context, req *zitimanagementv1.Cr
 		return nil, status.Error(codes.InvalidArgument, "slug is required")
 	}
 
-	zitiID, identityJSON, err := s.ziti.CreateAndEnrollAppIdentity(ctx, appID, slug)
+	zitiID, identityJSON, err := s.ziti.CreateAndEnrollAppIdentityWithOptions(ctx, appID, slug, req.GetAdditionalRoleAttributes(), req.GetTags())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create app identity: %v", err)
 	}
@@ -157,8 +171,8 @@ func (s *Server) CreateService(ctx context.Context, req *zitimanagementv1.Create
 	}
 
 	var serviceID string
-	if hostV1Config != nil || interceptV1Config != nil {
-		serviceID, err = s.ziti.CreateServiceWithConfigs(ctx, name, roleAttributes, hostV1Config, interceptV1Config)
+	if hostV1Config != nil || interceptV1Config != nil || len(req.GetTags()) > 0 {
+		serviceID, err = s.ziti.CreateServiceWithConfigsAndTags(ctx, name, roleAttributes, hostV1Config, interceptV1Config, req.GetTags())
 	} else {
 		serviceID, err = s.ziti.CreateService(ctx, name, roleAttributes)
 	}
@@ -183,7 +197,7 @@ func (s *Server) CreateRunnerIdentity(ctx context.Context, req *zitimanagementv1
 		return nil, status.Error(codes.InvalidArgument, "role_attributes is required")
 	}
 
-	zitiID, identityJSON, err := s.ziti.CreateAndEnrollRunnerIdentity(ctx, runnerID, roleAttributes)
+	zitiID, identityJSON, err := s.ziti.CreateAndEnrollRunnerIdentityWithTags(ctx, runnerID, roleAttributes, req.GetTags())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create runner identity: %v", err)
 	}
@@ -378,7 +392,7 @@ func (s *Server) CreateServicePolicy(ctx context.Context, req *zitimanagementv1.
 		return nil, status.Error(codes.InvalidArgument, "service_roles is required")
 	}
 
-	policyID, err := s.ziti.CreateServicePolicy(ctx, name, policyType, identityRoles, serviceRoles)
+	policyID, err := s.ziti.CreateServicePolicyWithTags(ctx, name, policyType, identityRoles, serviceRoles, req.GetTags())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create ziti service policy: %v", err)
 	}
@@ -431,7 +445,7 @@ func (s *Server) CreateDeviceIdentity(ctx context.Context, req *zitimanagementv1
 		return nil, status.Error(codes.InvalidArgument, "name is required")
 	}
 
-	zitiID, jwt, err := s.ziti.CreateDeviceIdentity(ctx, userIdentityID, name)
+	zitiID, jwt, err := s.ziti.CreateDeviceIdentityWithOptions(ctx, userIdentityID, name, req.GetAdditionalRoleAttributes(), req.GetTags())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create device identity: %v", err)
 	}
@@ -457,6 +471,126 @@ func (s *Server) DeleteDeviceIdentity(ctx context.Context, req *zitimanagementv1
 	}
 
 	return &zitimanagementv1.DeleteDeviceIdentityResponse{}, nil
+}
+
+func (s *Server) CreateTunnelIdentity(ctx context.Context, req *zitimanagementv1.CreateTunnelIdentityRequest) (*zitimanagementv1.CreateTunnelIdentityResponse, error) {
+	networkID := strings.TrimSpace(req.GetNetworkId())
+	if networkID == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id is required")
+	}
+	tunnelCredentialID := strings.TrimSpace(req.GetTunnelCredentialId())
+	if tunnelCredentialID == "" {
+		return nil, status.Error(codes.InvalidArgument, "tunnel_credential_id is required")
+	}
+
+	zitiID, jwt, err := s.ziti.CreateTunnelIdentity(ctx, networkID, tunnelCredentialID, req.GetTags())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "create tunnel identity: %v", err)
+	}
+	return &zitimanagementv1.CreateTunnelIdentityResponse{ZitiIdentityId: zitiID, EnrollmentJwt: jwt.Token, EnrollmentJwtExpiresAt: timestamppb.New(jwt.ExpiresAt)}, nil
+}
+
+func (s *Server) DeleteTunnelIdentity(ctx context.Context, req *zitimanagementv1.DeleteTunnelIdentityRequest) (*zitimanagementv1.DeleteTunnelIdentityResponse, error) {
+	zitiID := req.GetZitiIdentityId()
+	if zitiID == "" {
+		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
+	}
+	if err := s.ziti.DeleteIdentity(ctx, zitiID); err != nil && !errors.Is(err, ziti.ErrIdentityNotFound) {
+		return nil, status.Errorf(codes.Internal, "delete ziti identity: %v", err)
+	}
+	return &zitimanagementv1.DeleteTunnelIdentityResponse{}, nil
+}
+
+func (s *Server) PatchIdentityRoleAttributes(ctx context.Context, req *zitimanagementv1.PatchIdentityRoleAttributesRequest) (*zitimanagementv1.PatchIdentityRoleAttributesResponse, error) {
+	zitiID := req.GetZitiIdentityId()
+	if zitiID == "" {
+		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
+	}
+	if err := s.ziti.PatchIdentityRoleAttributes(ctx, zitiID, req.GetAdd(), req.GetRemove()); err != nil {
+		if errors.Is(err, ziti.ErrRoleAttributePatchUnsupported) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "patch ziti identity role attributes: %v", err)
+	}
+	return &zitimanagementv1.PatchIdentityRoleAttributesResponse{}, nil
+}
+
+func (s *Server) GetIdentityLiveness(ctx context.Context, req *zitimanagementv1.GetIdentityLivenessRequest) (*zitimanagementv1.GetIdentityLivenessResponse, error) {
+	zitiID := req.GetZitiIdentityId()
+	if zitiID == "" {
+		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
+	}
+	liveness, err := s.ziti.GetIdentityLiveness(ctx, zitiID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get ziti identity liveness: %v", err)
+	}
+	enrollmentState := zitimanagementv1.IdentityEnrollmentState_IDENTITY_ENROLLMENT_STATE_ENROLLED
+	if liveness.EnrollmentPending {
+		enrollmentState = zitimanagementv1.IdentityEnrollmentState_IDENTITY_ENROLLMENT_STATE_PENDING
+	}
+	return &zitimanagementv1.GetIdentityLivenessResponse{EnrollmentState: enrollmentState, HasEdgeRouterConnection: liveness.HasEdgeRouterConnection}, nil
+}
+
+func (s *Server) ListServicesByTag(ctx context.Context, req *zitimanagementv1.ListServicesByTagRequest) (*zitimanagementv1.ListServicesByTagResponse, error) {
+	result, err := s.ziti.ListServicesByTag(ctx, req.GetTags(), req.GetPageSize(), req.GetPageToken())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list ziti services: %v", err)
+	}
+	resp := &zitimanagementv1.ListServicesByTagResponse{Services: make([]*zitimanagementv1.OpenZitiService, len(result.Items)), NextPageToken: result.NextPageToken}
+	for i, item := range result.Items {
+		resp.Services[i] = toProtoOpenZitiService(item)
+	}
+	return resp, nil
+}
+
+func (s *Server) ListIdentitiesByTag(ctx context.Context, req *zitimanagementv1.ListIdentitiesByTagRequest) (*zitimanagementv1.ListIdentitiesByTagResponse, error) {
+	result, err := s.ziti.ListIdentitiesByTag(ctx, req.GetTags(), req.GetPageSize(), req.GetPageToken())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list ziti identities: %v", err)
+	}
+	resp := &zitimanagementv1.ListIdentitiesByTagResponse{Identities: make([]*zitimanagementv1.OpenZitiIdentity, len(result.Items)), NextPageToken: result.NextPageToken}
+	for i, item := range result.Items {
+		resp.Identities[i] = toProtoOpenZitiIdentity(item)
+	}
+	return resp, nil
+}
+
+func (s *Server) ListServicePoliciesByTag(ctx context.Context, req *zitimanagementv1.ListServicePoliciesByTagRequest) (*zitimanagementv1.ListServicePoliciesByTagResponse, error) {
+	result, err := s.ziti.ListServicePoliciesByTag(ctx, req.GetTags(), req.GetPageSize(), req.GetPageToken())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list ziti service policies: %v", err)
+	}
+	resp := &zitimanagementv1.ListServicePoliciesByTagResponse{ServicePolicies: make([]*zitimanagementv1.OpenZitiServicePolicy, len(result.Items)), NextPageToken: result.NextPageToken}
+	for i, item := range result.Items {
+		resp.ServicePolicies[i] = toProtoOpenZitiServicePolicy(item)
+	}
+	return resp, nil
+}
+
+func (s *Server) UpdateService(ctx context.Context, req *zitimanagementv1.UpdateServiceRequest) (*zitimanagementv1.UpdateServiceResponse, error) {
+	serviceID := req.GetZitiServiceId()
+	if serviceID == "" {
+		return nil, status.Error(codes.InvalidArgument, "ziti_service_id is required")
+	}
+	hostV1Config, err := fromProtoHostV1Config(req.GetHostV1Config())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "host_v1_config: %v", err)
+	}
+	interceptV1Config, err := fromProtoInterceptV1Config(req.GetInterceptV1Config())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "intercept_v1_config: %v", err)
+	}
+	tags := req.GetTags()
+	updateTags := len(tags) > 0
+	if req.GetTagsUpdate() != nil {
+		tags = req.GetTagsUpdate().GetTags()
+		updateTags = true
+	}
+	updated, err := s.ziti.UpdateService(ctx, serviceID, hostV1Config, interceptV1Config, tags, updateTags)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "update ziti service: %v", err)
+	}
+	return &zitimanagementv1.UpdateServiceResponse{Service: toProtoOpenZitiService(updated)}, nil
 }
 
 func (s *Server) ListManagedIdentities(ctx context.Context, req *zitimanagementv1.ListManagedIdentitiesRequest) (*zitimanagementv1.ListManagedIdentitiesResponse, error) {

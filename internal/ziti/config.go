@@ -1,5 +1,7 @@
 package ziti
 
+import "time"
+
 const (
 	hostV1ConfigTypeID      = "NH5p4FpGR"
 	interceptV1ConfigTypeID = "g7cIWbcGg"
@@ -26,4 +28,42 @@ type InterceptV1ConfigData struct {
 type PortRangeData struct {
 	Low  int32
 	High int32
+}
+
+type IdentityLiveness struct {
+	EnrollmentPending       bool
+	HasEdgeRouterConnection bool
+}
+
+type EnrollmentJWT struct {
+	Token     string
+	ExpiresAt time.Time
+}
+
+type OpenZitiIdentity struct {
+	ID             string
+	Name           string
+	RoleAttributes []string
+	Tags           map[string]string
+}
+
+type OpenZitiService struct {
+	ID             string
+	Name           string
+	RoleAttributes []string
+	Tags           map[string]string
+}
+
+type OpenZitiServicePolicy struct {
+	ID            string
+	Name          string
+	Type          string
+	IdentityRoles []string
+	ServiceRoles  []string
+	Tags          map[string]string
+}
+
+type ListResult[T any] struct {
+	Items         []T
+	NextPageToken string
 }
