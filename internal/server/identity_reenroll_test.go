@@ -12,6 +12,8 @@ import (
 	"github.com/agynio/ziti-management/internal/store"
 	"github.com/agynio/ziti-management/internal/ziti"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type fakeManagedIdentityStore struct {
@@ -167,7 +169,7 @@ func (f *fakeZitiClient) DeleteServicePolicy(_ context.Context, _ string) error 
 }
 
 func (f *fakeZitiClient) PatchIdentityRoleAttributes(_ context.Context, _ string, _, _ []string) error {
-	return errors.New("unexpected patch identity role attributes")
+	return ziti.ErrRoleAttributePatchUnsupported
 }
 
 func (f *fakeZitiClient) GetIdentityLiveness(_ context.Context, _ string) (ziti.IdentityLiveness, error) {
@@ -396,5 +398,20 @@ func TestCreateTunnelIdentityReturnsJWTExpiry(t *testing.T) {
 	}
 	if resp.GetEnrollmentJwtExpiresAt() == nil || !resp.GetEnrollmentJwtExpiresAt().AsTime().Equal(expiresAt) {
 		t.Fatalf("expected expiry %s, got %#v", expiresAt, resp.GetEnrollmentJwtExpiresAt())
+	}
+}
+
+func TestPatchIdentityRoleAttributesReportsUnsupported(t *testing.T) {
+	ctx := context.Background()
+	storeClient := newFakeManagedIdentityStore()
+	zitiClient := &fakeZitiClient{}
+	server := New(storeClient, zitiClient, time.Minute, false)
+
+	_, err := server.PatchIdentityRoleAttributes(ctx, &zitimanagementv1.PatchIdentityRoleAttributesRequest{
+		ZitiIdentityId: "identity-id",
+		Add:            []string{"group-one"},
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("expected failed precondition, got %v", err)
 	}
 }

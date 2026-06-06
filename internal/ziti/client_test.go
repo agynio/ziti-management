@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -27,7 +26,6 @@ type fakeIdentityService struct {
 	deleteIdentityFunc func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error)
 	detailIdentityFunc func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error)
 	listIdentitiesFunc func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error)
-	patchIdentityFunc  func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error)
 }
 
 func (f *fakeIdentityService) CreateIdentity(params *identity.CreateIdentityParams, _ runtime.ClientAuthInfoWriter, _ ...identity.ClientOption) (*identity.CreateIdentityCreated, error) {
@@ -56,13 +54,6 @@ func (f *fakeIdentityService) ListIdentities(params *identity.ListIdentitiesPara
 		return nil, errors.New("list identities not stubbed")
 	}
 	return f.listIdentitiesFunc(params)
-}
-
-func (f *fakeIdentityService) PatchIdentity(params *identity.PatchIdentityParams, _ runtime.ClientAuthInfoWriter, _ ...identity.ClientOption) (*identity.PatchIdentityOK, error) {
-	if f.patchIdentityFunc == nil {
-		return nil, errors.New("patch identity not stubbed")
-	}
-	return f.patchIdentityFunc(params)
 }
 
 type fakeServiceService struct {
@@ -290,62 +281,20 @@ func TestCreateTunnelIdentityUsesJWTExpirationWhenControllerExpiryMissing(t *tes
 	}
 }
 
-func TestPatchIdentityRoleAttributesKeepsUnrelatedRoles(t *testing.T) {
+func TestPatchIdentityRoleAttributesUnsupported(t *testing.T) {
 	ctx := context.Background()
-	currentRoles := rest_model.Attributes{"agents", "group-old", "keep"}
 	fake := &fakeIdentityService{
 		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{RoleAttributes: &currentRoles}}}, nil
-		},
-		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
-			if params == nil || params.Identity == nil || params.Identity.RoleAttributes == nil {
-				t.Fatalf("expected patch role attributes")
-			}
-			assertSameStrings(t, []string(*params.Identity.RoleAttributes), []string{"agents", "group-new", "keep"})
-			return &identity.PatchIdentityOK{}, nil
+			t.Fatalf("detail identity should not be called for unsupported delta patch")
+			return nil, nil
 		},
 	}
 
 	client := &Client{identity: fake}
-	if err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-new", "agents"}, []string{"group-old", "missing"}); err != nil {
-		t.Fatalf("patch identity role attributes: %v", err)
+	err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-new"}, []string{"group-old"})
+	if !errors.Is(err, ErrRoleAttributePatchUnsupported) {
+		t.Fatalf("expected unsupported error, got %v", err)
 	}
-}
-
-func TestPatchIdentityRoleAttributesSerializesConcurrentCalls(t *testing.T) {
-	ctx := context.Background()
-	roles := rest_model.Attributes{"agents"}
-	var mu sync.Mutex
-	fake := &fakeIdentityService{
-		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			mu.Lock()
-			defer mu.Unlock()
-			current := append(rest_model.Attributes(nil), roles...)
-			return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{RoleAttributes: &current}}}, nil
-		},
-		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
-			mu.Lock()
-			defer mu.Unlock()
-			roles = append(rest_model.Attributes(nil), (*params.Identity.RoleAttributes)...)
-			return &identity.PatchIdentityOK{}, nil
-		},
-	}
-	client := &Client{identity: fake}
-	var wg sync.WaitGroup
-	for _, attr := range []string{"group-one", "group-two"} {
-		attr := attr
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{attr}, nil); err != nil {
-				t.Errorf("patch identity role attributes: %v", err)
-			}
-		}()
-	}
-	wg.Wait()
-	mu.Lock()
-	defer mu.Unlock()
-	assertSameStrings(t, []string(roles), []string{"agents", "group-one", "group-two"})
 }
 
 func TestGetIdentityLivenessConvertsFields(t *testing.T) {

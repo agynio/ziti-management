@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +30,7 @@ import (
 var ErrIdentityNotFound = errors.New("identity not found")
 var ErrServiceNotFound = errors.New("service not found")
 var ErrServicePolicyNotFound = errors.New("service policy not found")
+var ErrRoleAttributePatchUnsupported = errors.New("identity role-attribute delta patch unsupported by OpenZiti management API")
 
 const (
 	roleAttributeAgents  = "agents"
@@ -44,7 +44,6 @@ type identityService interface {
 	DeleteIdentity(params *identity.DeleteIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DeleteIdentityOK, error)
 	DetailIdentity(params *identity.DetailIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DetailIdentityOK, error)
 	ListIdentities(params *identity.ListIdentitiesParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.ListIdentitiesOK, error)
-	PatchIdentity(params *identity.PatchIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.PatchIdentityOK, error)
 }
 
 type serviceService interface {
@@ -70,7 +69,6 @@ type servicePolicyService interface {
 
 type Client struct {
 	mu               sync.Mutex
-	roleAttrPatchMu  sync.Mutex
 	identity         identityService
 	service          serviceService
 	config           configService
@@ -728,64 +726,7 @@ func (c *Client) CreateTunnelIdentity(ctx context.Context, networkID, tunnelCred
 }
 
 func (c *Client) PatchIdentityRoleAttributes(ctx context.Context, zitiIdentityID string, add, remove []string) error {
-	add = uniqueStrings(add)
-	remove = uniqueStrings(remove)
-	if len(add) == 0 && len(remove) == 0 {
-		return nil
-	}
-	c.roleAttrPatchMu.Lock()
-	defer c.roleAttrPatchMu.Unlock()
-	detail, err := c.detailIdentity(ctx, zitiIdentityID)
-	if err != nil {
-		return err
-	}
-	patched := patchRoleAttributes(*detail.RoleAttributes, add, remove)
-	params := identity.NewPatchIdentityParamsWithContext(ctx)
-	params.ID = zitiIdentityID
-	params.Identity = &rest_model.IdentityPatch{RoleAttributes: &patched}
-	err = c.withReauth(func() error {
-		identityClient := c.identityClient()
-		_, callErr := identityClient.PatchIdentity(params, nil)
-		return callErr
-	})
-	if err != nil {
-		return fmt.Errorf("patch ziti identity role attributes: %w", err)
-	}
-	return nil
-}
-
-func patchRoleAttributes(current, add, remove []string) rest_model.Attributes {
-	roles := make(map[string]bool, len(current)+len(add))
-	for _, attr := range current {
-		if attr != "" {
-			roles[attr] = true
-		}
-	}
-	for _, attr := range remove {
-		delete(roles, attr)
-	}
-	for _, attr := range add {
-		roles[attr] = true
-	}
-	patched := make(rest_model.Attributes, 0, len(roles))
-	for attr := range roles {
-		patched = append(patched, attr)
-	}
-	sort.Strings(patched)
-	return patched
-}
-
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	unique := make([]string, 0, len(values))
-	for _, value := range values {
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		unique = append(unique, value)
-	}
-	return unique
+	return ErrRoleAttributePatchUnsupported
 }
 
 func (c *Client) GetIdentityLiveness(ctx context.Context, zitiIdentityID string) (IdentityLiveness, error) {
