@@ -72,6 +72,7 @@ type fakeZitiClient struct {
 	deleteServiceIDs  []string
 	agentCalls        []agentCall
 	createAgentErr    error
+	tunnelExpiresAt   time.Time
 }
 
 type agentCall struct {
@@ -144,8 +145,11 @@ func (f *fakeZitiClient) CreateDeviceIdentityWithOptions(ctx context.Context, us
 	return f.CreateDeviceIdentity(ctx, userIdentityID, name)
 }
 
-func (f *fakeZitiClient) CreateTunnelIdentity(_ context.Context, _, _ string, _ map[string]string) (string, string, error) {
-	return "", "", errors.New("unexpected create tunnel identity")
+func (f *fakeZitiClient) CreateTunnelIdentity(_ context.Context, _, _ string, _ map[string]string) (string, ziti.EnrollmentJWT, error) {
+	if f.tunnelExpiresAt.IsZero() {
+		return "", ziti.EnrollmentJWT{}, errors.New("unexpected create tunnel identity")
+	}
+	return "tunnel-ziti", ziti.EnrollmentJWT{Token: "tunnel-jwt", ExpiresAt: f.tunnelExpiresAt}, nil
 }
 
 func (f *fakeZitiClient) DeleteIdentity(_ context.Context, zitiID string) error {
@@ -370,5 +374,27 @@ func TestCreateAgentIdentityStoresWorkloadID(t *testing.T) {
 	}
 	if *stored.WorkloadID != workloadID {
 		t.Fatalf("expected workload id %s, got %s", workloadID, *stored.WorkloadID)
+	}
+}
+
+func TestCreateTunnelIdentityReturnsJWTExpiry(t *testing.T) {
+	ctx := context.Background()
+	expiresAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	storeClient := newFakeManagedIdentityStore()
+	zitiClient := &fakeZitiClient{tunnelExpiresAt: expiresAt}
+	server := New(storeClient, zitiClient, time.Minute, false)
+
+	resp, err := server.CreateTunnelIdentity(ctx, &zitimanagementv1.CreateTunnelIdentityRequest{
+		NetworkId:          "network-1",
+		TunnelCredentialId: "credential-1",
+	})
+	if err != nil {
+		t.Fatalf("create tunnel identity: %v", err)
+	}
+	if resp.GetZitiIdentityId() != "tunnel-ziti" || resp.GetEnrollmentJwt() != "tunnel-jwt" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+	if resp.GetEnrollmentJwtExpiresAt() == nil || !resp.GetEnrollmentJwtExpiresAt().AsTime().Equal(expiresAt) {
+		t.Fatalf("expected expiry %s, got %#v", expiresAt, resp.GetEnrollmentJwtExpiresAt())
 	}
 }

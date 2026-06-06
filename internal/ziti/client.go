@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/agynio/ziti-management/internal/id"
 	"github.com/go-openapi/runtime"
@@ -68,6 +70,7 @@ type servicePolicyService interface {
 
 type Client struct {
 	mu               sync.Mutex
+	roleAttrPatchMu  sync.Mutex
 	identity         identityService
 	service          serviceService
 	config           configService
@@ -447,7 +450,7 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 	if err != nil {
 		return "", "", err
 	}
-	return zitiID, jwt, nil
+	return zitiID, jwt.Token, nil
 }
 
 func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error) {
@@ -478,7 +481,7 @@ func (c *Client) CreateDeviceIdentityWithOptions(ctx context.Context, userIdenti
 	if err != nil {
 		return "", "", err
 	}
-	return zitiID, jwt, nil
+	return zitiID, jwt.Token, nil
 }
 
 func (c *Client) CreateService(ctx context.Context, name string, roleAttributes []string) (string, error) {
@@ -696,7 +699,7 @@ func (c *Client) DeleteServicePolicy(ctx context.Context, policyID string) error
 	return fmt.Errorf("delete ziti service policy: %w", err)
 }
 
-func (c *Client) CreateTunnelIdentity(ctx context.Context, networkID, tunnelCredentialID string, tags map[string]string) (string, string, error) {
+func (c *Client) CreateTunnelIdentity(ctx context.Context, networkID, tunnelCredentialID string, tags map[string]string) (string, EnrollmentJWT, error) {
 	name := fmt.Sprintf("tunnel-%s-%s", tunnelCredentialID, id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
@@ -714,38 +717,29 @@ func (c *Client) CreateTunnelIdentity(ctx context.Context, networkID, tunnelCred
 
 	zitiID, err := c.createIdentity(ctx, identityCreate)
 	if err != nil {
-		return "", "", err
+		return "", EnrollmentJWT{}, err
 	}
 
 	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
 	if err != nil {
-		return "", "", err
+		return "", EnrollmentJWT{}, err
 	}
 	return zitiID, jwt, nil
 }
 
 func (c *Client) PatchIdentityRoleAttributes(ctx context.Context, zitiIdentityID string, add, remove []string) error {
+	add = uniqueStrings(add)
+	remove = uniqueStrings(remove)
+	if len(add) == 0 && len(remove) == 0 {
+		return nil
+	}
+	c.roleAttrPatchMu.Lock()
+	defer c.roleAttrPatchMu.Unlock()
 	detail, err := c.detailIdentity(ctx, zitiIdentityID)
 	if err != nil {
 		return err
 	}
-	current := make(map[string]bool, len(*detail.RoleAttributes)+len(add))
-	for _, attr := range *detail.RoleAttributes {
-		current[attr] = true
-	}
-	for _, attr := range remove {
-		delete(current, attr)
-	}
-	for _, attr := range add {
-		if attr != "" {
-			current[attr] = true
-		}
-	}
-	patched := make(rest_model.Attributes, 0, len(current))
-	for attr := range current {
-		patched = append(patched, attr)
-	}
-
+	patched := patchRoleAttributes(*detail.RoleAttributes, add, remove)
 	params := identity.NewPatchIdentityParamsWithContext(ctx)
 	params.ID = zitiIdentityID
 	params.Identity = &rest_model.IdentityPatch{RoleAttributes: &patched}
@@ -758,6 +752,40 @@ func (c *Client) PatchIdentityRoleAttributes(ctx context.Context, zitiIdentityID
 		return fmt.Errorf("patch ziti identity role attributes: %w", err)
 	}
 	return nil
+}
+
+func patchRoleAttributes(current, add, remove []string) rest_model.Attributes {
+	roles := make(map[string]bool, len(current)+len(add))
+	for _, attr := range current {
+		if attr != "" {
+			roles[attr] = true
+		}
+	}
+	for _, attr := range remove {
+		delete(roles, attr)
+	}
+	for _, attr := range add {
+		roles[attr] = true
+	}
+	patched := make(rest_model.Attributes, 0, len(roles))
+	for attr := range roles {
+		patched = append(patched, attr)
+	}
+	sort.Strings(patched)
+	return patched
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		unique = append(unique, value)
+	}
+	return unique
 }
 
 func (c *Client) GetIdentityLiveness(ctx context.Context, zitiIdentityID string) (IdentityLiveness, error) {
@@ -928,7 +956,10 @@ func (c *Client) UpdateService(ctx context.Context, serviceID string, hostV1 *Ho
 		}
 		configIDs = appendMissing(configIDs, configID)
 	}
-	patch := &rest_model.ServicePatch{Configs: configIDs}
+	patch := &rest_model.ServicePatch{}
+	if hostV1 != nil || interceptV1 != nil {
+		patch.Configs = configIDs
+	}
 	if updateTags {
 		patch.Tags = tagsFromMap(tags)
 	}
@@ -1142,7 +1173,7 @@ func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]b
 	parseToken := parseEnrollmentToken
 	enrollFn := enrollIdentity
 
-	claims, _, err := parseToken(jwt)
+	claims, _, err := parseToken(jwt.Token)
 	if err != nil {
 		return nil, fmt.Errorf("parse enrollment token: %w", err)
 	}
@@ -1162,7 +1193,7 @@ func (c *Client) enrollIdentity(ctx context.Context, zitiIdentityID string) ([]b
 	return identityJSON, nil
 }
 
-func (c *Client) fetchEnrollmentJWT(ctx context.Context, zitiIdentityID string) (string, error) {
+func (c *Client) fetchEnrollmentJWT(ctx context.Context, zitiIdentityID string) (EnrollmentJWT, error) {
 	detailParams := identity.NewDetailIdentityParamsWithContext(ctx)
 	detailParams.ID = zitiIdentityID
 	var detail *identity.DetailIdentityOK
@@ -1173,16 +1204,27 @@ func (c *Client) fetchEnrollmentJWT(ctx context.Context, zitiIdentityID string) 
 		return callErr
 	})
 	if err != nil {
-		return "", fmt.Errorf("detail ziti identity: %w", err)
+		return EnrollmentJWT{}, fmt.Errorf("detail ziti identity: %w", err)
 	}
 	if detail.Payload == nil || detail.Payload.Data == nil || detail.Payload.Data.Enrollment == nil || detail.Payload.Data.Enrollment.Ott == nil {
-		return "", errors.New("detail ziti identity response missing enrollment")
+		return EnrollmentJWT{}, errors.New("detail ziti identity response missing enrollment")
 	}
-	jwt := detail.Payload.Data.Enrollment.Ott.JWT
-	if jwt == "" {
-		return "", errors.New("detail ziti identity response missing enrollment jwt")
+	ott := detail.Payload.Data.Enrollment.Ott
+	if ott.JWT == "" {
+		return EnrollmentJWT{}, errors.New("detail ziti identity response missing enrollment jwt")
 	}
-	return jwt, nil
+	expiresAt := time.Time(ott.ExpiresAt)
+	if expiresAt.IsZero() {
+		claims, _, err := parseEnrollmentToken(ott.JWT)
+		if err != nil {
+			return EnrollmentJWT{}, fmt.Errorf("parse enrollment token: %w", err)
+		}
+		if claims.ExpiresAt == nil {
+			return EnrollmentJWT{}, errors.New("enrollment jwt missing expiration")
+		}
+		expiresAt = claims.ExpiresAt.Time
+	}
+	return EnrollmentJWT{Token: ott.JWT, ExpiresAt: expiresAt}, nil
 }
 
 func (c *Client) cleanupServiceIdentity(ctx context.Context, zitiIdentityID string, err error) error {

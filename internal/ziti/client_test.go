@@ -6,15 +6,20 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-openapi/runtime"
+	"github.com/go-openapi/strfmt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/openziti/edge-api/rest_management_api_client/config"
 	"github.com/openziti/edge-api/rest_management_api_client/identity"
 	"github.com/openziti/edge-api/rest_management_api_client/service"
 	"github.com/openziti/edge-api/rest_management_api_client/service_policy"
 	"github.com/openziti/edge-api/rest_model"
+	sdkziti "github.com/openziti/sdk-golang/ziti"
 )
 
 type fakeIdentityService struct {
@@ -227,6 +232,7 @@ func TestCreateAgentIdentityWithOptionsAddsRolesAndTags(t *testing.T) {
 
 func TestCreateTunnelIdentityCreatesTunnelRolesAndTags(t *testing.T) {
 	ctx := context.Background()
+	expiresAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 	fake := &fakeIdentityService{
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
 			if params == nil || params.Identity == nil || params.Identity.RoleAttributes == nil {
@@ -240,7 +246,7 @@ func TestCreateTunnelIdentityCreatesTunnelRolesAndTags(t *testing.T) {
 			return createIdentityResponse("tunnel-id"), nil
 		},
 		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			return detailIdentityResponse("tunnel-jwt"), nil
+			return detailIdentityResponseWithExpiry("tunnel-jwt", expiresAt), nil
 		},
 	}
 
@@ -249,8 +255,38 @@ func TestCreateTunnelIdentityCreatesTunnelRolesAndTags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create tunnel identity: %v", err)
 	}
-	if zitiID != "tunnel-id" || jwt != "tunnel-jwt" {
+	if zitiID != "tunnel-id" || jwt.Token != "tunnel-jwt" || !jwt.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("unexpected create result %q %q", zitiID, jwt)
+	}
+}
+
+func TestCreateTunnelIdentityUsesJWTExpirationWhenControllerExpiryMissing(t *testing.T) {
+	ctx := context.Background()
+	expiresAt := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
+	stubEnrollmentFuncs(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
+		if token != "tunnel-jwt" {
+			t.Fatalf("unexpected token: %s", token)
+		}
+		return &sdkziti.EnrollmentClaims{RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(expiresAt)}}, nil, nil
+	}, nil)
+	fake := &fakeIdentityService{
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			return createIdentityResponse("tunnel-id"), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{Enrollment: &rest_model.IdentityEnrollments{
+				Ott: &rest_model.IdentityEnrollmentsOtt{JWT: "tunnel-jwt"},
+			}}}}, nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	_, jwt, err := client.CreateTunnelIdentity(ctx, "network-1", "credential-1", nil)
+	if err != nil {
+		t.Fatalf("create tunnel identity: %v", err)
+	}
+	if !jwt.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expected expiry %s, got %s", expiresAt, jwt.ExpiresAt)
 	}
 }
 
@@ -274,6 +310,42 @@ func TestPatchIdentityRoleAttributesKeepsUnrelatedRoles(t *testing.T) {
 	if err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-new", "agents"}, []string{"group-old", "missing"}); err != nil {
 		t.Fatalf("patch identity role attributes: %v", err)
 	}
+}
+
+func TestPatchIdentityRoleAttributesSerializesConcurrentCalls(t *testing.T) {
+	ctx := context.Background()
+	roles := rest_model.Attributes{"agents"}
+	var mu sync.Mutex
+	fake := &fakeIdentityService{
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			current := append(rest_model.Attributes(nil), roles...)
+			return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{RoleAttributes: &current}}}, nil
+		},
+		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			roles = append(rest_model.Attributes(nil), (*params.Identity.RoleAttributes)...)
+			return &identity.PatchIdentityOK{}, nil
+		},
+	}
+	client := &Client{identity: fake}
+	var wg sync.WaitGroup
+	for _, attr := range []string{"group-one", "group-two"} {
+		attr := attr
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{attr}, nil); err != nil {
+				t.Errorf("patch identity role attributes: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	mu.Lock()
+	defer mu.Unlock()
+	assertSameStrings(t, []string(roles), []string{"agents", "group-one", "group-two"})
 }
 
 func TestGetIdentityLivenessConvertsFields(t *testing.T) {
@@ -434,6 +506,47 @@ func TestUpdateServicePatchesConfigsAndTags(t *testing.T) {
 	}
 	if call != 2 || updated.ID != serviceID {
 		t.Fatalf("unexpected update result: call=%d updated=%#v", call, updated)
+	}
+}
+
+func TestUpdateServiceTagOnlyDoesNotPatchConfigs(t *testing.T) {
+	ctx := context.Background()
+	serviceID := "service-id"
+	serviceName := "service-name"
+	roles := rest_model.Attributes{"role-one"}
+	fakeService := &fakeServiceService{
+		detailServiceFunc: func(params *service.DetailServiceParams) (*service.DetailServiceOK, error) {
+			return &service.DetailServiceOK{Payload: &rest_model.DetailServiceEnvelope{Data: &rest_model.ServiceDetail{
+				BaseEntity:     rest_model.BaseEntity{ID: &serviceID, Tags: tagsFromMap(map[string]string{"owner": "networks"})},
+				Name:           &serviceName,
+				RoleAttributes: &roles,
+			}}}, nil
+		},
+		listConfigFunc: func(params *service.ListServiceConfigParams) (*service.ListServiceConfigOK, error) {
+			t.Fatalf("list service config should not be called for tag-only update")
+			return nil, nil
+		},
+		patchServiceFunc: func(params *service.PatchServiceParams) (*service.PatchServiceOK, error) {
+			if params == nil || params.Service == nil {
+				t.Fatalf("expected patch service")
+			}
+			if params.Service.Configs != nil {
+				t.Fatalf("tag-only update must not patch configs: %#v", params.Service.Configs)
+			}
+			assertTags(t, params.Service.Tags, map[string]string{"owner": "networks"})
+			return &service.PatchServiceOK{}, nil
+		},
+	}
+	fakeConfig := &fakeConfigService{
+		createConfigFunc: func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error) {
+			t.Fatalf("create config should not be called for tag-only update")
+			return nil, nil
+		},
+	}
+
+	client := &Client{service: fakeService, config: fakeConfig}
+	if _, err := client.UpdateService(ctx, serviceID, nil, nil, map[string]string{"owner": "networks"}, true); err != nil {
+		t.Fatalf("update service: %v", err)
 	}
 }
 
@@ -911,8 +1024,14 @@ func createIdentityResponse(identityID string) *identity.CreateIdentityCreated {
 }
 
 func detailIdentityResponse(jwt string) *identity.DetailIdentityOK {
+	expiresAt := time.Now().Add(time.Hour).UTC()
+	return detailIdentityResponseWithExpiry(jwt, expiresAt)
+}
+
+func detailIdentityResponseWithExpiry(jwt string, expiresAt time.Time) *identity.DetailIdentityOK {
+	expires := strfmt.DateTime(expiresAt)
 	return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{Enrollment: &rest_model.IdentityEnrollments{
-		Ott: &rest_model.IdentityEnrollmentsOtt{JWT: jwt},
+		Ott: &rest_model.IdentityEnrollmentsOtt{JWT: jwt, ExpiresAt: expires},
 	}}}}
 }
 

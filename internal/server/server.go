@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/agynio/ziti-management/internal/id"
 	"github.com/agynio/ziti-management/internal/store"
@@ -45,7 +46,7 @@ type zitiClient interface {
 	CreateServicePolicyWithTags(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string, tags map[string]string) (string, error)
 	CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error)
 	CreateDeviceIdentityWithOptions(ctx context.Context, userIdentityID uuid.UUID, name string, additionalRoleAttributes []string, tags map[string]string) (string, string, error)
-	CreateTunnelIdentity(ctx context.Context, networkID, tunnelCredentialID string, tags map[string]string) (string, string, error)
+	CreateTunnelIdentity(ctx context.Context, networkID, tunnelCredentialID string, tags map[string]string) (string, ziti.EnrollmentJWT, error)
 	DeleteIdentity(ctx context.Context, zitiIdentityID string) error
 	DeleteService(ctx context.Context, serviceID string) error
 	DeleteServicePolicy(ctx context.Context, policyID string) error
@@ -486,7 +487,7 @@ func (s *Server) CreateTunnelIdentity(ctx context.Context, req *zitimanagementv1
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create tunnel identity: %v", err)
 	}
-	return &zitimanagementv1.CreateTunnelIdentityResponse{ZitiIdentityId: zitiID, EnrollmentJwt: jwt}, nil
+	return &zitimanagementv1.CreateTunnelIdentityResponse{ZitiIdentityId: zitiID, EnrollmentJwt: jwt.Token, EnrollmentJwtExpiresAt: timestamppb.New(jwt.ExpiresAt)}, nil
 }
 
 func (s *Server) DeleteTunnelIdentity(ctx context.Context, req *zitimanagementv1.DeleteTunnelIdentityRequest) (*zitimanagementv1.DeleteTunnelIdentityResponse, error) {
