@@ -88,7 +88,7 @@ func fromProtoHostV1Config(value *zitimanagementv1.HostV1Config) (*ziti.HostV1Co
 		return nil, fmt.Errorf("address is required")
 	}
 	port := value.GetPort()
-	if !value.GetForwardPort() && (port <= 0 || port > maxPort) {
+	if !value.GetForwardPort() && len(value.GetAllowedPortRanges()) == 0 && (port <= 0 || port > maxPort) {
 		return nil, fmt.Errorf("port must be between 1 and %d", maxPort)
 	}
 	if value.GetForwardPort() && port > maxPort {

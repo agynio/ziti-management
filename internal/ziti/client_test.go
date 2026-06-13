@@ -19,6 +19,7 @@ import (
 	"github.com/openziti/edge-api/rest_management_api_client/service_policy"
 	"github.com/openziti/edge-api/rest_model"
 	sdkziti "github.com/openziti/sdk-golang/ziti"
+	"github.com/openziti/sdk-golang/ziti/enroll"
 )
 
 type fakeIdentityService struct {
@@ -26,6 +27,7 @@ type fakeIdentityService struct {
 	deleteIdentityFunc func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error)
 	detailIdentityFunc func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error)
 	listIdentitiesFunc func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error)
+	patchIdentityFunc  func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error)
 }
 
 func (f *fakeIdentityService) CreateIdentity(params *identity.CreateIdentityParams, _ runtime.ClientAuthInfoWriter, _ ...identity.ClientOption) (*identity.CreateIdentityCreated, error) {
@@ -54,6 +56,13 @@ func (f *fakeIdentityService) ListIdentities(params *identity.ListIdentitiesPara
 		return nil, errors.New("list identities not stubbed")
 	}
 	return f.listIdentitiesFunc(params)
+}
+
+func (f *fakeIdentityService) PatchIdentity(params *identity.PatchIdentityParams, _ runtime.ClientAuthInfoWriter, _ ...identity.ClientOption) (*identity.PatchIdentityOK, error) {
+	if f.patchIdentityFunc == nil {
+		return nil, errors.New("patch identity not stubbed")
+	}
+	return f.patchIdentityFunc(params)
 }
 
 type fakeServiceService struct {
@@ -281,19 +290,38 @@ func TestCreateTunnelIdentityUsesJWTExpirationWhenControllerExpiryMissing(t *tes
 	}
 }
 
-func TestPatchIdentityRoleAttributesUnsupported(t *testing.T) {
+func TestPatchIdentityRoleAttributesIsIdempotent(t *testing.T) {
 	ctx := context.Background()
+	current := rest_model.Attributes{"devices", "group-old", "user-1"}
 	fake := &fakeIdentityService{
 		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			t.Fatalf("detail identity should not be called for unsupported delta patch")
-			return nil, nil
+			if params == nil || params.ID != "identity-id" {
+				t.Fatalf("unexpected detail params: %#v", params)
+			}
+			identityID := "identity-id"
+			name := "device"
+			return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{
+				BaseEntity:     rest_model.BaseEntity{ID: &identityID},
+				Name:           &name,
+				RoleAttributes: &current,
+			}}}, nil
+		},
+		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
+			if params == nil || params.ID != "identity-id" || params.Identity == nil || params.Identity.RoleAttributes == nil {
+				t.Fatalf("unexpected patch params: %#v", params)
+			}
+			expected := rest_model.Attributes{"devices", "group-new", "user-1"}
+			if !reflect.DeepEqual(*params.Identity.RoleAttributes, expected) {
+				t.Fatalf("unexpected role attributes: %#v", *params.Identity.RoleAttributes)
+			}
+			return &identity.PatchIdentityOK{}, nil
 		},
 	}
 
 	client := &Client{identity: fake}
-	err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-new"}, []string{"group-old"})
-	if !errors.Is(err, ErrRoleAttributePatchUnsupported) {
-		t.Fatalf("expected unsupported error, got %v", err)
+	err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-new", "devices", "group-new"}, []string{"group-old", "missing"})
+	if err != nil {
+		t.Fatalf("patch role attributes: %v", err)
 	}
 }
 
@@ -347,6 +375,39 @@ func TestListServicesByTagConvertsRequestAndResponse(t *testing.T) {
 	}
 	if result.NextPageToken != "30" || len(result.Items) != 1 || result.Items[0].ID != serviceID {
 		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestCreateAndEnrollAppIdentityAddsAppRoleAndTags(t *testing.T) {
+	ctx := context.Background()
+	appID := uuid.New()
+	createdID := "app-identity-id"
+	fake := &fakeIdentityService{
+		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
+			return listIdentitiesResponse(nil, 100, 0, 0), nil
+		},
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			assertCreateExternalID(t, params, appID)
+			expectedRoles := rest_model.Attributes{"apps", "app-" + appID.String(), "group-one"}
+			if params.Identity.RoleAttributes == nil || !reflect.DeepEqual(*params.Identity.RoleAttributes, expectedRoles) {
+				t.Fatalf("unexpected role attributes: %#v", params.Identity.RoleAttributes)
+			}
+			assertTags(t, params.Identity.Tags, map[string]string{"owner": "apps"})
+			return createIdentityResponse(createdID), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponse("jwt-token"), nil
+		},
+	}
+	stubEnrollmentFuncs(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
+		return &sdkziti.EnrollmentClaims{}, nil, nil
+	}, func(flags enroll.EnrollmentFlags) (*sdkziti.Config, error) {
+		return &sdkziti.Config{}, nil
+	})
+
+	client := &Client{identity: fake}
+	if _, _, err := client.CreateAndEnrollAppIdentityWithOptions(ctx, appID, "slug", []string{"group-one", "apps"}, map[string]string{"owner": "apps"}); err != nil {
+		t.Fatalf("create app identity: %v", err)
 	}
 }
 
@@ -857,7 +918,8 @@ func TestCreateDeviceIdentity(t *testing.T) {
 			if *params.Identity.Name != "laptop" {
 				t.Fatalf("unexpected identity name: %s", *params.Identity.Name)
 			}
-			if params.Identity.RoleAttributes == nil || !reflect.DeepEqual(*params.Identity.RoleAttributes, rest_model.Attributes{"devices"}) {
+			expectedRoles := rest_model.Attributes{"devices", "user-" + userID.String()}
+			if params.Identity.RoleAttributes == nil || !reflect.DeepEqual(*params.Identity.RoleAttributes, expectedRoles) {
 				t.Fatalf("unexpected role attributes: %#v", params.Identity.RoleAttributes)
 			}
 			if params.Identity.Enrollment == nil || !params.Identity.Enrollment.Ott {

@@ -192,6 +192,21 @@ func TestFromProtoHostV1Config(t *testing.T) {
 			},
 		},
 		{
+			name: "valid multi-port target mapping",
+			input: &zitimanagementv1.HostV1Config{
+				Protocol:          "tcp",
+				Address:           "10.0.0.1",
+				ForwardPort:       true,
+				AllowedPortRanges: []*zitimanagementv1.PortRange{{Low: 5432, High: 5432}, {Low: 6379, High: 6379}},
+			},
+			want: &ziti.HostV1ConfigData{
+				Protocol:          "tcp",
+				Address:           "10.0.0.1",
+				ForwardPort:       true,
+				AllowedPortRanges: []ziti.PortRangeData{{Low: 5432, High: 5432}, {Low: 6379, High: 6379}},
+			},
+		},
+		{
 			name: "empty allowed address",
 			input: &zitimanagementv1.HostV1Config{
 				Protocol:         "tcp",

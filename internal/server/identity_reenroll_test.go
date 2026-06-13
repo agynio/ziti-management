@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -12,8 +13,6 @@ import (
 	"github.com/agynio/ziti-management/internal/store"
 	"github.com/agynio/ziti-management/internal/ziti"
 	"github.com/google/uuid"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type fakeManagedIdentityStore struct {
@@ -75,6 +74,13 @@ type fakeZitiClient struct {
 	agentCalls        []agentCall
 	createAgentErr    error
 	tunnelExpiresAt   time.Time
+	patchedRoles      rolePatch
+}
+
+type rolePatch struct {
+	zitiID string
+	add    []string
+	remove []string
 }
 
 type agentCall struct {
@@ -168,8 +174,9 @@ func (f *fakeZitiClient) DeleteServicePolicy(_ context.Context, _ string) error 
 	return nil
 }
 
-func (f *fakeZitiClient) PatchIdentityRoleAttributes(_ context.Context, _ string, _, _ []string) error {
-	return ziti.ErrRoleAttributePatchUnsupported
+func (f *fakeZitiClient) PatchIdentityRoleAttributes(_ context.Context, zitiID string, add, remove []string) error {
+	f.patchedRoles = rolePatch{zitiID: zitiID, add: add, remove: remove}
+	return nil
 }
 
 func (f *fakeZitiClient) GetIdentityLiveness(_ context.Context, _ string) (ziti.IdentityLiveness, error) {
@@ -401,7 +408,7 @@ func TestCreateTunnelIdentityReturnsJWTExpiry(t *testing.T) {
 	}
 }
 
-func TestPatchIdentityRoleAttributesReportsUnsupported(t *testing.T) {
+func TestPatchIdentityRoleAttributesDelegatesPatch(t *testing.T) {
 	ctx := context.Background()
 	storeClient := newFakeManagedIdentityStore()
 	zitiClient := &fakeZitiClient{}
@@ -410,8 +417,12 @@ func TestPatchIdentityRoleAttributesReportsUnsupported(t *testing.T) {
 	_, err := server.PatchIdentityRoleAttributes(ctx, &zitimanagementv1.PatchIdentityRoleAttributesRequest{
 		ZitiIdentityId: "identity-id",
 		Add:            []string{"group-one"},
+		Remove:         []string{"group-two"},
 	})
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("expected failed precondition, got %v", err)
+	if err != nil {
+		t.Fatalf("patch role attributes: %v", err)
+	}
+	if zitiClient.patchedRoles.zitiID != "identity-id" || !reflect.DeepEqual(zitiClient.patchedRoles.add, []string{"group-one"}) || !reflect.DeepEqual(zitiClient.patchedRoles.remove, []string{"group-two"}) {
+		t.Fatalf("unexpected patch: %#v", zitiClient.patchedRoles)
 	}
 }

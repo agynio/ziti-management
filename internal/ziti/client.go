@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,7 +31,6 @@ import (
 var ErrIdentityNotFound = errors.New("identity not found")
 var ErrServiceNotFound = errors.New("service not found")
 var ErrServicePolicyNotFound = errors.New("service policy not found")
-var ErrRoleAttributePatchUnsupported = errors.New("identity role-attribute delta patch unsupported by OpenZiti management API")
 
 const (
 	roleAttributeAgents  = "agents"
@@ -44,6 +44,7 @@ type identityService interface {
 	DeleteIdentity(params *identity.DeleteIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DeleteIdentityOK, error)
 	DetailIdentity(params *identity.DetailIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DetailIdentityOK, error)
 	ListIdentities(params *identity.ListIdentitiesParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.ListIdentitiesOK, error)
+	PatchIdentity(params *identity.PatchIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.PatchIdentityOK, error)
 }
 
 type serviceService interface {
@@ -458,7 +459,7 @@ func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.U
 func (c *Client) CreateDeviceIdentityWithOptions(ctx context.Context, userIdentityID uuid.UUID, name string, additionalRoleAttributes []string, tags map[string]string) (string, string, error) {
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
-	roleAttrs := mergeRoleAttributes([]string{roleAttributeDevices}, additionalRoleAttributes)
+	roleAttrs := mergeRoleAttributes([]string{roleAttributeDevices, fmt.Sprintf("user-%s", userIdentityID.String())}, additionalRoleAttributes)
 	externalID := userIdentityID.String()
 	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
@@ -726,7 +727,48 @@ func (c *Client) CreateTunnelIdentity(ctx context.Context, networkID, tunnelCred
 }
 
 func (c *Client) PatchIdentityRoleAttributes(ctx context.Context, zitiIdentityID string, add, remove []string) error {
-	return ErrRoleAttributePatchUnsupported
+	detail, err := c.detailIdentity(ctx, zitiIdentityID)
+	if err != nil {
+		return err
+	}
+	roleAttrs := patchRoleAttributes(detail.RoleAttributes, add, remove)
+	params := identity.NewPatchIdentityParamsWithContext(ctx)
+	params.ID = zitiIdentityID
+	params.Identity = &rest_model.IdentityPatch{RoleAttributes: &roleAttrs}
+	err = c.withReauth(func() error {
+		identityClient := c.identityClient()
+		_, callErr := identityClient.PatchIdentity(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return fmt.Errorf("patch ziti identity: %w", err)
+	}
+	return nil
+}
+
+func patchRoleAttributes(current *rest_model.Attributes, add, remove []string) rest_model.Attributes {
+	roleSet := map[string]bool{}
+	if current != nil {
+		for _, attr := range *current {
+			if attr != "" {
+				roleSet[attr] = true
+			}
+		}
+	}
+	for _, attr := range remove {
+		delete(roleSet, attr)
+	}
+	for _, attr := range add {
+		if attr != "" {
+			roleSet[attr] = true
+		}
+	}
+	roleAttrs := make(rest_model.Attributes, 0, len(roleSet))
+	for attr := range roleSet {
+		roleAttrs = append(roleAttrs, attr)
+	}
+	sort.Strings(roleAttrs)
+	return roleAttrs
 }
 
 func (c *Client) GetIdentityLiveness(ctx context.Context, zitiIdentityID string) (IdentityLiveness, error) {
@@ -1061,7 +1103,7 @@ func (c *Client) CreateAndEnrollAppIdentityWithOptions(ctx context.Context, appI
 	name := fmt.Sprintf("app-%s-%s", slug, id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
-	roleAttrs := mergeRoleAttributes([]string{roleAttributeApps}, additionalRoleAttributes)
+	roleAttrs := mergeRoleAttributes([]string{roleAttributeApps, fmt.Sprintf("app-%s", appID.String())}, additionalRoleAttributes)
 	externalID := appID.String()
 	if err := c.deleteIdentityByExternalID(ctx, externalID); err != nil {
 		return "", nil, fmt.Errorf("delete existing ziti identity: %w", err)
