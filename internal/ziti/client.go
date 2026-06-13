@@ -49,8 +49,6 @@ type identityService interface {
 
 type serviceService interface {
 	CreateService(params *service.CreateServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.CreateServiceCreated, error)
-	DetailService(params *service.DetailServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DetailServiceOK, error)
-	ListServices(params *service.ListServicesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.ListServicesOK, error)
 	UpdateService(params *service.UpdateServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.UpdateServiceOK, error)
 	DeleteService(params *service.DeleteServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DeleteServiceOK, error)
 	DetailService(params *service.DetailServiceParams, authInfo runtime.ClientAuthInfoWriter, opts ...service.ClientOption) (*service.DetailServiceOK, error)
@@ -68,7 +66,6 @@ type configService interface {
 type servicePolicyService interface {
 	CreateServicePolicy(params *service_policy.CreateServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.CreateServicePolicyCreated, error)
 	DetailServicePolicy(params *service_policy.DetailServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.DetailServicePolicyOK, error)
-	ListServicePolicies(params *service_policy.ListServicePoliciesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.ListServicePoliciesOK, error)
 	DeleteServicePolicy(params *service_policy.DeleteServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.DeleteServicePolicyOK, error)
 	ListServicePolicies(params *service_policy.ListServicePoliciesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.ListServicePoliciesOK, error)
 }
@@ -338,7 +335,7 @@ func listPagination(pageSize int32, pageToken string) (int64, int64, error) {
 	return limit, offset, nil
 }
 
-func nextPageToken(meta *rest_model.Meta) string {
+func tagNextPageToken(meta *rest_model.Meta) string {
 	if meta == nil || meta.Pagination == nil || meta.Pagination.Offset == nil || meta.Pagination.Limit == nil || meta.Pagination.TotalCount == nil {
 		return ""
 	}
@@ -851,7 +848,7 @@ func (c *Client) ListIdentitiesByTag(ctx context.Context, tags map[string]string
 	for _, identityDetail := range listed.Payload.Data {
 		items = append(items, toOpenZitiIdentity(identityDetail))
 	}
-	return ListResult[OpenZitiIdentity]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+	return ListResult[OpenZitiIdentity]{Items: items, NextPageToken: tagNextPageToken(listed.Payload.Meta)}, nil
 }
 
 func (c *Client) ListServicesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ListResult[OpenZitiService], error) {
@@ -883,7 +880,7 @@ func (c *Client) ListServicesByTag(ctx context.Context, tags map[string]string, 
 	for _, serviceDetail := range listed.Payload.Data {
 		items = append(items, toOpenZitiService(serviceDetail))
 	}
-	return ListResult[OpenZitiService]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+	return ListResult[OpenZitiService]{Items: items, NextPageToken: tagNextPageToken(listed.Payload.Meta)}, nil
 }
 
 func (c *Client) ListServicePoliciesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ListResult[OpenZitiServicePolicy], error) {
@@ -915,10 +912,10 @@ func (c *Client) ListServicePoliciesByTag(ctx context.Context, tags map[string]s
 	for _, policyDetail := range listed.Payload.Data {
 		items = append(items, toOpenZitiServicePolicy(policyDetail))
 	}
-	return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+	return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: tagNextPageToken(listed.Payload.Meta)}, nil
 }
 
-func (c *Client) UpdateService(ctx context.Context, serviceID string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData, tags map[string]string, updateTags bool) (OpenZitiService, error) {
+func (c *Client) updateServiceConfigsAndTags(ctx context.Context, serviceID string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData, tags map[string]string, updateTags bool) (OpenZitiService, error) {
 	detail, err := c.detailService(ctx, serviceID)
 	if err != nil {
 		return OpenZitiService{}, err
@@ -1350,14 +1347,14 @@ func (c *Client) CreateServiceReturning(ctx context.Context, name string, roleAt
 func (c *Client) UpdateService(ctx context.Context, id string, name string, roleAttributes []string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData) (Service, error) {
 	configIDs := make([]string, 0, 2)
 	if hostV1 != nil {
-		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), hostV1ConfigData(hostV1))
+		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), hostV1ConfigData(hostV1), nil)
 		if err != nil {
 			return Service{}, err
 		}
 		configIDs = append(configIDs, configID)
 	}
 	if interceptV1 != nil {
-		configID, err := c.createConfig(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), interceptV1ConfigData(interceptV1))
+		configID, err := c.createConfig(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), interceptV1ConfigData(interceptV1), nil)
 		if err != nil {
 			return Service{}, c.cleanupConfigs(ctx, configIDs, err)
 		}

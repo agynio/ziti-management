@@ -66,8 +66,6 @@ func (f *fakeIdentityService) PatchIdentity(params *identity.PatchIdentityParams
 
 type fakeServiceService struct {
 	createServiceFunc func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error)
-	detailServiceFunc func(params *service.DetailServiceParams) (*service.DetailServiceOK, error)
-	listServicesFunc  func(params *service.ListServicesParams) (*service.ListServicesOK, error)
 	updateServiceFunc func(params *service.UpdateServiceParams) (*service.UpdateServiceOK, error)
 	deleteServiceFunc func(params *service.DeleteServiceParams) (*service.DeleteServiceOK, error)
 	detailServiceFunc func(params *service.DetailServiceParams) (*service.DetailServiceOK, error)
@@ -81,20 +79,6 @@ func (f *fakeServiceService) CreateService(params *service.CreateServiceParams, 
 		return nil, errors.New("create service not stubbed")
 	}
 	return f.createServiceFunc(params)
-}
-
-func (f *fakeServiceService) DetailService(params *service.DetailServiceParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.DetailServiceOK, error) {
-	if f.detailServiceFunc == nil {
-		return nil, errors.New("detail service not stubbed")
-	}
-	return f.detailServiceFunc(params)
-}
-
-func (f *fakeServiceService) ListServices(params *service.ListServicesParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.ListServicesOK, error) {
-	if f.listServicesFunc == nil {
-		return nil, errors.New("list services not stubbed")
-	}
-	return f.listServicesFunc(params)
 }
 
 func (f *fakeServiceService) UpdateService(params *service.UpdateServiceParams, _ runtime.ClientAuthInfoWriter, _ ...service.ClientOption) (*service.UpdateServiceOK, error) {
@@ -171,7 +155,6 @@ type fakeServicePolicyService struct {
 	detailServicePolicyFunc func(params *service_policy.DetailServicePolicyParams) (*service_policy.DetailServicePolicyOK, error)
 	listServicePoliciesFunc func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error)
 	deleteServicePolicyFunc func(params *service_policy.DeleteServicePolicyParams) (*service_policy.DeleteServicePolicyOK, error)
-	listServicePoliciesFunc func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error)
 }
 
 func (f *fakeServicePolicyService) CreateServicePolicy(params *service_policy.CreateServicePolicyParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.CreateServicePolicyCreated, error) {
@@ -200,13 +183,6 @@ func (f *fakeServicePolicyService) DeleteServicePolicy(params *service_policy.De
 		return nil, errors.New("delete service policy not stubbed")
 	}
 	return f.deleteServicePolicyFunc(params)
-}
-
-func (f *fakeServicePolicyService) ListServicePolicies(params *service_policy.ListServicePoliciesParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.ListServicePoliciesOK, error) {
-	if f.listServicePoliciesFunc == nil {
-		return nil, errors.New("list service policies not stubbed")
-	}
-	return f.listServicePoliciesFunc(params)
 }
 
 func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
@@ -590,7 +566,7 @@ func TestListServicePoliciesByTagConvertsRequestAndResponse(t *testing.T) {
 	}
 }
 
-func TestUpdateServicePatchesConfigsAndTags(t *testing.T) {
+func TestUpdateServiceConfigsAndTagsPatchesConfigsAndTags(t *testing.T) {
 	ctx := context.Background()
 	serviceID := "service-id"
 	serviceName := "service-name"
@@ -631,7 +607,7 @@ func TestUpdateServicePatchesConfigsAndTags(t *testing.T) {
 	}
 
 	client := &Client{service: fakeService, config: fakeConfig}
-	updated, err := client.UpdateService(ctx, serviceID, &HostV1ConfigData{Protocol: "tcp", Address: "127.0.0.1", Port: 8080}, nil, map[string]string{"owner": "networks"}, true)
+	updated, err := client.updateServiceConfigsAndTags(ctx, serviceID, &HostV1ConfigData{Protocol: "tcp", Address: "127.0.0.1", Port: 8080}, nil, map[string]string{"owner": "networks"}, true)
 	if err != nil {
 		t.Fatalf("update service: %v", err)
 	}
@@ -640,7 +616,7 @@ func TestUpdateServicePatchesConfigsAndTags(t *testing.T) {
 	}
 }
 
-func TestUpdateServiceTagOnlyDoesNotPatchConfigs(t *testing.T) {
+func TestUpdateServiceConfigsAndTagsTagOnlyDoesNotPatchConfigs(t *testing.T) {
 	ctx := context.Background()
 	serviceID := "service-id"
 	serviceName := "service-name"
@@ -676,7 +652,7 @@ func TestUpdateServiceTagOnlyDoesNotPatchConfigs(t *testing.T) {
 	}
 
 	client := &Client{service: fakeService, config: fakeConfig}
-	if _, err := client.UpdateService(ctx, serviceID, nil, nil, map[string]string{"owner": "networks"}, true); err != nil {
+	if _, err := client.updateServiceConfigsAndTags(ctx, serviceID, nil, nil, map[string]string{"owner": "networks"}, true); err != nil {
 		t.Fatalf("update service: %v", err)
 	}
 }

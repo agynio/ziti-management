@@ -64,7 +64,6 @@ type zitiClient interface {
 	ListServicesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiService], error)
 	ListIdentitiesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiIdentity], error)
 	ListServicePoliciesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiServicePolicy], error)
-	UpdateService(ctx context.Context, serviceID string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData, tags map[string]string, updateTags bool) (ziti.OpenZitiService, error)
 }
 
 type Server struct {
@@ -569,32 +568,6 @@ func (s *Server) ListServicePoliciesByTag(ctx context.Context, req *zitimanageme
 		resp.ServicePolicies[i] = toProtoOpenZitiServicePolicy(item)
 	}
 	return resp, nil
-}
-
-func (s *Server) UpdateService(ctx context.Context, req *zitimanagementv1.UpdateServiceRequest) (*zitimanagementv1.UpdateServiceResponse, error) {
-	serviceID := req.GetZitiServiceId()
-	if serviceID == "" {
-		return nil, status.Error(codes.InvalidArgument, "ziti_service_id is required")
-	}
-	hostV1Config, err := fromProtoHostV1Config(req.GetHostV1Config())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "host_v1_config: %v", err)
-	}
-	interceptV1Config, err := fromProtoInterceptV1Config(req.GetInterceptV1Config())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "intercept_v1_config: %v", err)
-	}
-	tags := req.GetTags()
-	updateTags := len(tags) > 0
-	if req.GetTagsUpdate() != nil {
-		tags = req.GetTagsUpdate().GetTags()
-		updateTags = true
-	}
-	updated, err := s.ziti.UpdateService(ctx, serviceID, hostV1Config, interceptV1Config, tags, updateTags)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "update ziti service: %v", err)
-	}
-	return &zitimanagementv1.UpdateServiceResponse{Service: toProtoOpenZitiService(updated)}, nil
 }
 
 func (s *Server) ListManagedIdentities(ctx context.Context, req *zitimanagementv1.ListManagedIdentitiesRequest) (*zitimanagementv1.ListManagedIdentitiesResponse, error) {

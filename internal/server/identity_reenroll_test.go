@@ -202,10 +202,6 @@ func (f *fakeZitiClient) ListServicePoliciesByTag(_ context.Context, _ map[strin
 	return ziti.ListResult[ziti.OpenZitiServicePolicy]{}, errors.New("unexpected list service policies by tag")
 }
 
-func (f *fakeZitiClient) UpdateService(_ context.Context, _ string, _ *ziti.HostV1ConfigData, _ *ziti.InterceptV1ConfigData, _ map[string]string, _ bool) (ziti.OpenZitiService, error) {
-	return ziti.OpenZitiService{}, errors.New("unexpected update service")
-}
-
 func TestCreateAppIdentityAllowsReenroll(t *testing.T) {
 	ctx := context.Background()
 	appID := uuid.New()

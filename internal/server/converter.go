@@ -344,14 +344,14 @@ func toProtoOpenZitiServicePolicy(policy ziti.OpenZitiServicePolicy) *zitimanage
 	return &zitimanagementv1.OpenZitiServicePolicy{
 		ZitiServicePolicyId: policy.ID,
 		Name:                policy.Name,
-		Type:                toProtoServicePolicyType(policy.Type),
+		Type:                toProtoOpenZitiServicePolicyType(policy.Type),
 		IdentityRoles:       policy.IdentityRoles,
 		ServiceRoles:        policy.ServiceRoles,
 		Tags:                policy.Tags,
 	}
 }
 
-func toProtoServicePolicyType(value string) zitimanagementv1.ServicePolicyType {
+func toProtoOpenZitiServicePolicyType(value string) zitimanagementv1.ServicePolicyType {
 	switch value {
 	case "Bind":
 		return zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_BIND
