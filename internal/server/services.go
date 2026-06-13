@@ -70,7 +70,10 @@ func (s *Server) UpdateService(ctx context.Context, req *zitimanagementv1.Update
 		}
 		return nil, status.Errorf(codes.Internal, "update ziti service: %v", err)
 	}
-	return &zitimanagementv1.UpdateServiceResponse{Service: toProtoService(service)}, nil
+	return &zitimanagementv1.UpdateServiceResponse{
+		Service:           &zitimanagementv1.OpenZitiService{ZitiServiceId: service.ID, Name: service.Name, RoleAttributes: service.RoleAttributes},
+		ReconciledService: toProtoService(service),
+	}, nil
 }
 
 func (s *Server) GetServicePolicy(ctx context.Context, req *zitimanagementv1.GetServicePolicyRequest) (*zitimanagementv1.GetServicePolicyResponse, error) {
