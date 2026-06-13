@@ -411,6 +411,38 @@ func TestCreateAndEnrollAppIdentityAddsAppRoleAndTags(t *testing.T) {
 	}
 }
 
+func TestCreateAndEnrollRunnerIdentityAddsRunnerRoleAndTags(t *testing.T) {
+	ctx := context.Background()
+	runnerID := uuid.New()
+	fake := &fakeIdentityService{
+		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
+			return listIdentitiesResponse(nil, 100, 0, 0), nil
+		},
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			assertCreateExternalID(t, params, runnerID)
+			expectedRoles := rest_model.Attributes{"runners", "group-one"}
+			if params.Identity.RoleAttributes == nil || !reflect.DeepEqual(*params.Identity.RoleAttributes, expectedRoles) {
+				t.Fatalf("unexpected role attributes: %#v", params.Identity.RoleAttributes)
+			}
+			assertTags(t, params.Identity.Tags, map[string]string{"owner": "runners"})
+			return createIdentityResponse("runner-identity-id"), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponse("jwt-token"), nil
+		},
+	}
+	stubEnrollmentFuncs(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
+		return &sdkziti.EnrollmentClaims{}, nil, nil
+	}, func(flags enroll.EnrollmentFlags) (*sdkziti.Config, error) {
+		return &sdkziti.Config{}, nil
+	})
+
+	client := &Client{identity: fake}
+	if _, _, err := client.CreateAndEnrollRunnerIdentityWithTags(ctx, runnerID, []string{"group-one", "runners"}, map[string]string{"owner": "runners"}); err != nil {
+		t.Fatalf("create runner identity: %v", err)
+	}
+}
+
 func TestListIdentitiesByTagConvertsRequestAndResponse(t *testing.T) {
 	ctx := context.Background()
 	identityID := "identity-id"

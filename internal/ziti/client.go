@@ -36,6 +36,7 @@ const (
 	roleAttributeAgents  = "agents"
 	roleAttributeApps    = "apps"
 	roleAttributeDevices = "devices"
+	roleAttributeRunners = "runners"
 	roleAttributeTunnels = "tunnels"
 )
 
@@ -1129,7 +1130,7 @@ func (c *Client) CreateAndEnrollRunnerIdentityWithTags(ctx context.Context, runn
 	name := fmt.Sprintf("runner-%s-%s", runnerID.String(), id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
-	roleAttrs := rest_model.Attributes(roleAttributes)
+	roleAttrs := mergeRoleAttributes([]string{roleAttributeRunners}, roleAttributes)
 	externalID := runnerID.String()
 	if err := c.deleteIdentityByExternalID(ctx, externalID); err != nil {
 		return "", nil, fmt.Errorf("delete existing ziti identity: %w", err)
