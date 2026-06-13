@@ -125,6 +125,7 @@ func (f *fakeServiceService) PatchService(params *service.PatchServiceParams, _ 
 
 type fakeConfigService struct {
 	createConfigFunc func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error)
+	listConfigsFunc  func(params *config.ListConfigsParams) (*config.ListConfigsOK, error)
 	deleteConfigFunc func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error)
 	patchConfigFunc  func(params *config.PatchConfigParams) (*config.PatchConfigOK, error)
 }
@@ -134,6 +135,13 @@ func (f *fakeConfigService) CreateConfig(params *config.CreateConfigParams, _ ru
 		return nil, errors.New("create config not stubbed")
 	}
 	return f.createConfigFunc(params)
+}
+
+func (f *fakeConfigService) ListConfigs(params *config.ListConfigsParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.ListConfigsOK, error) {
+	if f.listConfigsFunc == nil {
+		return nil, errors.New("list configs not stubbed")
+	}
+	return f.listConfigsFunc(params)
 }
 
 func (f *fakeConfigService) DeleteConfig(params *config.DeleteConfigParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.DeleteConfigOK, error) {
@@ -597,6 +605,12 @@ func TestUpdateServiceConfigsAndTagsPatchesConfigsAndTags(t *testing.T) {
 		},
 	}
 	fakeConfig := &fakeConfigService{
+		listConfigsFunc: func(params *config.ListConfigsParams) (*config.ListConfigsOK, error) {
+			if params == nil || params.Filter == nil || *params.Filter != `name = "service-name-host-v1"` {
+				t.Fatalf("unexpected config lookup: %#v", params)
+			}
+			return listConfigsByNameResponse(nil, 2, 0, 0), nil
+		},
 		createConfigFunc: func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error) {
 			if params == nil || params.Config == nil {
 				t.Fatalf("expected config create")
@@ -1268,6 +1282,93 @@ func listConfigsResponse(details []*rest_model.ConfigDetail, limit, offset, tota
 	}
 }
 
+func listConfigsByNameResponse(details []*rest_model.ConfigDetail, limit, offset, total int64) *config.ListConfigsOK {
+	return &config.ListConfigsOK{
+		Payload: &rest_model.ListConfigsEnvelope{
+			Data: details,
+			Meta: paginationMeta(limit, offset, total),
+		},
+	}
+}
+
 func paginationMeta(limit, offset, total int64) *rest_model.Meta {
 	return &rest_model.Meta{Pagination: &rest_model.Pagination{Limit: &limit, Offset: &offset, TotalCount: &total}}
+}
+
+func TestUpdateServiceReusesConfigByName(t *testing.T) {
+	ctx := context.Background()
+	serviceID := "service-id"
+	serviceName := "service-name"
+	hostConfigID := "host-config"
+	interceptConfigID := "intercept-config"
+	roles := rest_model.Attributes{"role-one"}
+	listConfigCalls := 0
+	patchConfigIDs := make([]string, 0, 2)
+
+	fakeConfig := &fakeConfigService{
+		listConfigsFunc: func(params *config.ListConfigsParams) (*config.ListConfigsOK, error) {
+			if params == nil || params.Filter == nil {
+				t.Fatalf("expected config name filter")
+			}
+			listConfigCalls++
+			switch *params.Filter {
+			case `name = "service-name-host-v1"`:
+				name := "service-name-host-v1"
+				configTypeID := hostV1ConfigTypeID
+				return listConfigsByNameResponse([]*rest_model.ConfigDetail{{BaseEntity: rest_model.BaseEntity{ID: &hostConfigID}, Name: &name, ConfigTypeID: &configTypeID}}, 2, 0, 1), nil
+			case `name = "service-name-intercept-v1"`:
+				name := "service-name-intercept-v1"
+				configTypeID := interceptV1ConfigTypeID
+				return listConfigsByNameResponse([]*rest_model.ConfigDetail{{BaseEntity: rest_model.BaseEntity{ID: &interceptConfigID}, Name: &name, ConfigTypeID: &configTypeID}}, 2, 0, 1), nil
+			default:
+				t.Fatalf("unexpected filter: %s", *params.Filter)
+			}
+			return nil, nil
+		},
+		createConfigFunc: func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error) {
+			t.Fatalf("update must reuse existing configs, create called with %#v", params)
+			return nil, nil
+		},
+		patchConfigFunc: func(params *config.PatchConfigParams) (*config.PatchConfigOK, error) {
+			if params == nil || params.Config == nil {
+				t.Fatalf("expected config patch")
+			}
+			patchConfigIDs = append(patchConfigIDs, params.ID)
+			return &config.PatchConfigOK{}, nil
+		},
+	}
+	fakeService := &fakeServiceService{
+		updateServiceFunc: func(params *service.UpdateServiceParams) (*service.UpdateServiceOK, error) {
+			if params == nil || params.Service == nil {
+				t.Fatalf("expected service update")
+			}
+			expectedConfigs := []string{hostConfigID, interceptConfigID}
+			if !reflect.DeepEqual(params.Service.Configs, expectedConfigs) {
+				t.Fatalf("unexpected configs: %#v", params.Service.Configs)
+			}
+			return &service.UpdateServiceOK{}, nil
+		},
+		detailServiceFunc: func(params *service.DetailServiceParams) (*service.DetailServiceOK, error) {
+			return &service.DetailServiceOK{Payload: &rest_model.DetailServiceEnvelope{Data: &rest_model.ServiceDetail{
+				BaseEntity:     rest_model.BaseEntity{ID: &serviceID},
+				Name:           &serviceName,
+				RoleAttributes: &roles,
+			}}}, nil
+		},
+	}
+
+	client := &Client{service: fakeService, config: fakeConfig}
+	updated, err := client.UpdateService(ctx, serviceID, serviceName, []string{"role-one"}, &HostV1ConfigData{Protocol: "tcp", Address: "127.0.0.1", Port: 443}, &InterceptV1ConfigData{Protocols: []string{"tcp"}, Addresses: []string{"example.com"}, PortRanges: []PortRangeData{{Low: 443, High: 443}}})
+	if err != nil {
+		t.Fatalf("update service: %v", err)
+	}
+	if updated.ID != serviceID {
+		t.Fatalf("unexpected updated service: %#v", updated)
+	}
+	if listConfigCalls != 2 {
+		t.Fatalf("expected 2 config list calls, got %d", listConfigCalls)
+	}
+	if !reflect.DeepEqual(patchConfigIDs, []string{hostConfigID, interceptConfigID}) {
+		t.Fatalf("unexpected patched configs: %#v", patchConfigIDs)
+	}
 }

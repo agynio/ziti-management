@@ -59,6 +59,7 @@ type serviceService interface {
 
 type configService interface {
 	CreateConfig(params *config.CreateConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.CreateConfigCreated, error)
+	ListConfigs(params *config.ListConfigsParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.ListConfigsOK, error)
 	DeleteConfig(params *config.DeleteConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.DeleteConfigOK, error)
 	PatchConfig(params *config.PatchConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.PatchConfigOK, error)
 }
@@ -1007,24 +1008,10 @@ func (c *Client) upsertServiceConfig(ctx context.Context, serviceID, configTypeI
 		return "", err
 	}
 	if configDetail == nil {
-		return c.createConfig(ctx, configTypeID, name, data, tags)
+		configID, _, err := c.upsertConfigByName(ctx, configTypeID, name, data, tags, updateTags)
+		return configID, err
 	}
-	patch := &rest_model.ConfigPatch{Data: data, Name: name}
-	if updateTags {
-		patch.Tags = tagsFromMap(tags)
-	}
-	params := config.NewPatchConfigParamsWithContext(ctx)
-	params.ID = *configDetail.ID
-	params.Config = patch
-	err = c.withReauth(func() error {
-		configClient := c.configClient()
-		_, callErr := configClient.PatchConfig(params, nil)
-		return callErr
-	})
-	if err != nil {
-		return "", fmt.Errorf("patch ziti config: %w", err)
-	}
-	return *configDetail.ID, nil
+	return c.patchConfig(ctx, configDetail, name, data, tags, updateTags)
 }
 
 func (c *Client) findServiceConfigByType(ctx context.Context, serviceID, configTypeID string) (*rest_model.ConfigDetail, error) {
@@ -1346,19 +1333,26 @@ func (c *Client) CreateServiceReturning(ctx context.Context, name string, roleAt
 
 func (c *Client) UpdateService(ctx context.Context, id string, name string, roleAttributes []string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData) (Service, error) {
 	configIDs := make([]string, 0, 2)
+	createdConfigIDs := make([]string, 0, 2)
 	if hostV1 != nil {
-		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), hostV1ConfigData(hostV1), nil)
+		configID, created, err := c.upsertConfigByName(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), hostV1ConfigData(hostV1), nil, false)
 		if err != nil {
 			return Service{}, err
 		}
 		configIDs = append(configIDs, configID)
+		if created {
+			createdConfigIDs = append(createdConfigIDs, configID)
+		}
 	}
 	if interceptV1 != nil {
-		configID, err := c.createConfig(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), interceptV1ConfigData(interceptV1), nil)
+		configID, created, err := c.upsertConfigByName(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), interceptV1ConfigData(interceptV1), nil, false)
 		if err != nil {
-			return Service{}, c.cleanupConfigs(ctx, configIDs, err)
+			return Service{}, c.cleanupConfigs(ctx, createdConfigIDs, err)
 		}
 		configIDs = append(configIDs, configID)
+		if created {
+			createdConfigIDs = append(createdConfigIDs, configID)
+		}
 	}
 	params := service.NewUpdateServiceParamsWithContext(ctx)
 	params.ID = id
@@ -1371,9 +1365,9 @@ func (c *Client) UpdateService(ctx context.Context, id string, name string, role
 	if err != nil {
 		var notFound *service.UpdateServiceNotFound
 		if errors.As(err, &notFound) {
-			return Service{}, c.cleanupConfigs(ctx, configIDs, ErrServiceNotFound)
+			return Service{}, c.cleanupConfigs(ctx, createdConfigIDs, ErrServiceNotFound)
 		}
-		return Service{}, c.cleanupConfigs(ctx, configIDs, fmt.Errorf("update ziti service: %w", err))
+		return Service{}, c.cleanupConfigs(ctx, createdConfigIDs, fmt.Errorf("update ziti service: %w", err))
 	}
 	return c.GetService(ctx, id)
 }
@@ -1703,4 +1697,66 @@ func portRangesFromMap(values map[string]any, key string) []PortRangeData {
 func isConflictError(err error) bool {
 	var checker statusCodeChecker
 	return errors.As(err, &checker) && checker.IsCode(409)
+}
+
+func (c *Client) upsertConfigByName(ctx context.Context, configTypeID, name string, data map[string]any, tags map[string]string, updateTags bool) (string, bool, error) {
+	configDetail, err := c.findConfigByName(ctx, name)
+	if err != nil {
+		return "", false, err
+	}
+	if configDetail == nil {
+		configID, err := c.createConfig(ctx, configTypeID, name, data, tags)
+		return configID, true, err
+	}
+	if configDetail.ConfigTypeID == nil || *configDetail.ConfigTypeID != configTypeID {
+		return "", false, fmt.Errorf("config %s has unexpected config type", name)
+	}
+	configID, err := c.patchConfig(ctx, configDetail, name, data, tags, updateTags)
+	return configID, false, err
+}
+
+func (c *Client) patchConfig(ctx context.Context, configDetail *rest_model.ConfigDetail, name string, data map[string]any, tags map[string]string, updateTags bool) (string, error) {
+	patch := &rest_model.ConfigPatch{Data: data, Name: name}
+	if updateTags {
+		patch.Tags = tagsFromMap(tags)
+	}
+	params := config.NewPatchConfigParamsWithContext(ctx)
+	params.ID = *configDetail.ID
+	params.Config = patch
+	err := c.withReauth(func() error {
+		configClient := c.configClient()
+		_, callErr := configClient.PatchConfig(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return "", fmt.Errorf("patch ziti config: %w", err)
+	}
+	return *configDetail.ID, nil
+}
+
+func (c *Client) findConfigByName(ctx context.Context, name string) (*rest_model.ConfigDetail, error) {
+	limit := int64(2)
+	offset := int64(0)
+	filter := fmt.Sprintf(`name = "%s"`, escapeFilterValue(name))
+	params := config.NewListConfigsParamsWithContext(ctx)
+	params.Limit = &limit
+	params.Offset = &offset
+	params.Filter = &filter
+	var listed *config.ListConfigsOK
+	err := c.withReauth(func() error {
+		configClient := c.configClient()
+		var callErr error
+		listed, callErr = configClient.ListConfigs(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list ziti configs: %w", err)
+	}
+	if listed.Payload == nil {
+		return nil, errors.New("list ziti configs response missing payload")
+	}
+	if len(listed.Payload.Data) == 0 {
+		return nil, nil
+	}
+	return listed.Payload.Data[0], nil
 }

@@ -14,6 +14,8 @@ FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
 
 WORKDIR /src
 
+RUN apk add --no-cache git
+
 COPY --from=buf /usr/local/bin/buf /usr/local/bin/buf
 
 COPY go.mod go.sum ./
