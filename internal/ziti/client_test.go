@@ -201,9 +201,9 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 	jwt := "jwt-token"
 
 	fake := &fakeIdentityService{
-		deleteIdentityFunc: func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error) {
-			t.Fatalf("delete identity should not be called: %#v", params)
-			return nil, nil
+		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
+			assertListExternalID(t, params, workloadID)
+			return listIdentitiesResponse(nil, 100, 0, 0), nil
 		},
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
 			assertCreateExternalID(t, params, workloadID)
@@ -236,6 +236,10 @@ func TestCreateAgentIdentityWithOptionsAddsRolesAndTags(t *testing.T) {
 	agentID := uuid.New()
 	workloadID := uuid.New()
 	fake := &fakeIdentityService{
+		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
+			assertListExternalID(t, params, workloadID)
+			return listIdentitiesResponse(nil, 100, 0, 0), nil
+		},
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
 			assertCreateAgentRoleAttributes(t, params, agentID, workloadID, "group-one")
 			assertTags(t, params.Identity.Tags, map[string]string{"network": "net-1"})
@@ -679,6 +683,10 @@ func TestCreateAgentIdentityCreateFailure(t *testing.T) {
 	var detailCalled bool
 
 	fake := &fakeIdentityService{
+		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
+			assertListExternalID(t, params, workloadID)
+			return listIdentitiesResponse(nil, 100, 0, 0), nil
+		},
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
 			assertCreateExternalID(t, params, workloadID)
 			assertCreateAgentRoleAttributes(t, params, agentID, workloadID)
@@ -1085,6 +1093,14 @@ func TestCreateDeviceIdentityCreateFailure(t *testing.T) {
 	}
 	if detailCalled {
 		t.Fatalf("expected detail not called")
+	}
+}
+
+func assertListExternalID(t *testing.T, params *identity.ListIdentitiesParams, expectedID uuid.UUID) {
+	t.Helper()
+	expectedFilter := "externalId=" + strconv.Quote(expectedID.String())
+	if params == nil || params.Filter == nil || *params.Filter != expectedFilter {
+		t.Fatalf("expected filter %q, got %#v", expectedFilter, params)
 	}
 }
 

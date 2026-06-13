@@ -433,6 +433,9 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 		fmt.Sprintf("workload-%s", workloadID.String()),
 	}, additionalRoleAttributes)
 	externalID := workloadID.String()
+	if err := c.deleteIdentityByExternalID(ctx, externalID); err != nil {
+		return "", "", fmt.Errorf("delete existing ziti identity: %w", err)
+	}
 	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
 		Type:           &identityType,
