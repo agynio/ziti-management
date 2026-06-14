@@ -27,6 +27,7 @@ type fakeIdentityService struct {
 	deleteIdentityFunc func(params *identity.DeleteIdentityParams) (*identity.DeleteIdentityOK, error)
 	detailIdentityFunc func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error)
 	listIdentitiesFunc func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error)
+	patchIdentityFunc  func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error)
 }
 
 type fakeEnrollmentService struct {
@@ -61,6 +62,13 @@ func (f *fakeIdentityService) ListIdentities(params *identity.ListIdentitiesPara
 		return nil, errors.New("list identities not stubbed")
 	}
 	return f.listIdentitiesFunc(params)
+}
+
+func (f *fakeIdentityService) PatchIdentity(params *identity.PatchIdentityParams, _ runtime.ClientAuthInfoWriter, _ ...identity.ClientOption) (*identity.PatchIdentityOK, error) {
+	if f.patchIdentityFunc == nil {
+		return nil, errors.New("patch identity not stubbed")
+	}
+	return f.patchIdentityFunc(params)
 }
 
 func (f *fakeEnrollmentService) CreateEnrollment(params *enrollment.CreateEnrollmentParams, _ runtime.ClientAuthInfoWriter, _ ...enrollment.ClientOption) (*enrollment.CreateEnrollmentCreated, error) {
@@ -424,19 +432,153 @@ func TestCreateTunnelIdentityUsesJWTExpirationWhenControllerExpiryMissing(t *tes
 	}
 }
 
-func TestPatchIdentityRoleAttributesUnsupported(t *testing.T) {
+func TestPatchIdentityRoleAttributesAddsAttrs(t *testing.T) {
 	ctx := context.Background()
 	fake := &fakeIdentityService{
-		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			t.Fatalf("detail identity should not be called for unsupported delta patch")
-			return nil, nil
+		detailIdentityFunc: detailIdentityWithRoleAttributes(rest_model.Attributes{"agents", "agent-one"}),
+		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
+			assertPatchIdentityRoleAttributes(t, params, "identity-id", []string{"agents", "agent-one", "group-one", "group-two"})
+			return &identity.PatchIdentityOK{}, nil
 		},
 	}
 
 	client := &Client{identity: fake}
-	err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-new"}, []string{"group-old"})
-	if !errors.Is(err, ErrRoleAttributePatchUnsupported) {
-		t.Fatalf("expected unsupported error, got %v", err)
+	if err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-one", "group-two"}, nil); err != nil {
+		t.Fatalf("patch identity role attributes: %v", err)
+	}
+}
+
+func TestPatchIdentityRoleAttributesRemovesAttrs(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeIdentityService{
+		detailIdentityFunc: detailIdentityWithRoleAttributes(rest_model.Attributes{"agents", "group-one", "agent-one", "group-two"}),
+		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
+			assertPatchIdentityRoleAttributes(t, params, "identity-id", []string{"agents", "agent-one"})
+			return &identity.PatchIdentityOK{}, nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	if err := client.PatchIdentityRoleAttributes(ctx, "identity-id", nil, []string{"group-one", "group-two"}); err != nil {
+		t.Fatalf("patch identity role attributes: %v", err)
+	}
+}
+
+func TestPatchIdentityRoleAttributesAddsAndRemovesDeterministically(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeIdentityService{
+		detailIdentityFunc: detailIdentityWithRoleAttributes(rest_model.Attributes{"agents", "group-old", "agent-one", "group-same"}),
+		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
+			assertPatchIdentityRoleAttributes(t, params, "identity-id", []string{"agents", "agent-one", "group-new"})
+			return &identity.PatchIdentityOK{}, nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-new", "group-same"}, []string{"group-old", "group-same"})
+	if err != nil {
+		t.Fatalf("patch identity role attributes: %v", err)
+	}
+}
+
+func TestPatchIdentityRoleAttributesIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	currentAttrs := rest_model.Attributes{"agents", "group-one", "agent-one"}
+	fake := &fakeIdentityService{
+		detailIdentityFunc: detailIdentityWithRoleAttributes(currentAttrs),
+		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
+			assertPatchIdentityRoleAttributes(t, params, "identity-id", []string{"agents", "group-one", "agent-one"})
+			return &identity.PatchIdentityOK{}, nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-one", "group-one"}, []string{"missing", "missing"})
+	if err != nil {
+		t.Fatalf("patch identity role attributes: %v", err)
+	}
+}
+
+func TestPatchIdentityRoleAttributesPreservesUnrelatedAttrs(t *testing.T) {
+	ctx := context.Background()
+	currentAttrs := rest_model.Attributes{"agents", "agent-one", "workload-one", "devices", "user-one", "apps", "app-one", "custom"}
+	fake := &fakeIdentityService{
+		detailIdentityFunc: detailIdentityWithRoleAttributes(currentAttrs),
+		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
+			assertPatchIdentityRoleAttributes(t, params, "identity-id", []string{"agents", "agent-one", "workload-one", "devices", "user-one", "apps", "app-one", "custom", "group-one"})
+			return &identity.PatchIdentityOK{}, nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	if err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-one"}, []string{"missing"}); err != nil {
+		t.Fatalf("patch identity role attributes: %v", err)
+	}
+}
+
+func TestPatchIdentityRoleAttributesMapsDetailNotFound(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeIdentityService{
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return nil, &identity.DetailIdentityNotFound{}
+		},
+	}
+
+	client := &Client{identity: fake}
+	err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-one"}, nil)
+	if !errors.Is(err, ErrIdentityNotFound) {
+		t.Fatalf("expected identity not found, got %v", err)
+	}
+}
+
+func TestPatchIdentityRoleAttributesMapsPatchNotFound(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeIdentityService{
+		detailIdentityFunc: detailIdentityWithRoleAttributes(rest_model.Attributes{"agents"}),
+		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
+			return nil, &identity.PatchIdentityNotFound{}
+		},
+	}
+
+	client := &Client{identity: fake}
+	err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-one"}, nil)
+	if !errors.Is(err, ErrIdentityNotFound) {
+		t.Fatalf("expected identity not found, got %v", err)
+	}
+}
+
+func TestPatchIdentityRoleAttributesWrapsControllerError(t *testing.T) {
+	ctx := context.Background()
+	controllerErr := errors.New("controller unavailable")
+	fake := &fakeIdentityService{
+		detailIdentityFunc: detailIdentityWithRoleAttributes(rest_model.Attributes{"agents"}),
+		patchIdentityFunc: func(params *identity.PatchIdentityParams) (*identity.PatchIdentityOK, error) {
+			return nil, controllerErr
+		},
+	}
+
+	client := &Client{identity: fake}
+	err := client.PatchIdentityRoleAttributes(ctx, "identity-id", []string{"group-one"}, nil)
+	if !errors.Is(err, controllerErr) {
+		t.Fatalf("expected controller error, got %v", err)
+	}
+}
+
+func detailIdentityWithRoleAttributes(roleAttributes rest_model.Attributes) func(*identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+	return func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+		return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{
+			RoleAttributes: &roleAttributes,
+		}}}, nil
+	}
+}
+
+func assertPatchIdentityRoleAttributes(t *testing.T, params *identity.PatchIdentityParams, identityID string, expected []string) {
+	t.Helper()
+	if params == nil || params.ID != identityID || params.Identity == nil || params.Identity.RoleAttributes == nil {
+		t.Fatalf("unexpected patch params: %#v", params)
+	}
+	if !reflect.DeepEqual([]string(*params.Identity.RoleAttributes), expected) {
+		t.Fatalf("unexpected role attributes: %#v", *params.Identity.RoleAttributes)
 	}
 }
 
