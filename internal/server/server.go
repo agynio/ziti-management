@@ -507,8 +507,8 @@ func (s *Server) PatchIdentityRoleAttributes(ctx context.Context, req *zitimanag
 		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
 	}
 	if err := s.ziti.PatchIdentityRoleAttributes(ctx, zitiID, req.GetAdd(), req.GetRemove()); err != nil {
-		if errors.Is(err, ziti.ErrRoleAttributePatchUnsupported) {
-			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		if errors.Is(err, ziti.ErrIdentityNotFound) {
+			return nil, status.Error(codes.NotFound, "ziti identity not found")
 		}
 		return nil, status.Errorf(codes.Internal, "patch ziti identity role attributes: %v", err)
 	}

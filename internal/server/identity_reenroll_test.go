@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -74,7 +75,15 @@ type fakeZitiClient struct {
 	deleteServiceIDs  []string
 	agentCalls        []agentCall
 	createAgentErr    error
+	patchIdentityErr  error
+	patchIdentityCall *patchIdentityCall
 	tunnelExpiresAt   time.Time
+}
+
+type patchIdentityCall struct {
+	zitiID string
+	add    []string
+	remove []string
 }
 
 type agentCall struct {
@@ -168,8 +177,13 @@ func (f *fakeZitiClient) DeleteServicePolicy(_ context.Context, _ string) error 
 	return nil
 }
 
-func (f *fakeZitiClient) PatchIdentityRoleAttributes(_ context.Context, _ string, _, _ []string) error {
-	return ziti.ErrRoleAttributePatchUnsupported
+func (f *fakeZitiClient) PatchIdentityRoleAttributes(_ context.Context, zitiID string, add, remove []string) error {
+	f.patchIdentityCall = &patchIdentityCall{
+		zitiID: zitiID,
+		add:    append([]string(nil), add...),
+		remove: append([]string(nil), remove...),
+	}
+	return f.patchIdentityErr
 }
 
 func (f *fakeZitiClient) GetIdentityLiveness(_ context.Context, _ string) (ziti.IdentityLiveness, error) {
@@ -401,7 +415,7 @@ func TestCreateTunnelIdentityReturnsJWTExpiry(t *testing.T) {
 	}
 }
 
-func TestPatchIdentityRoleAttributesReportsUnsupported(t *testing.T) {
+func TestPatchIdentityRoleAttributesDelegatesToZiti(t *testing.T) {
 	ctx := context.Background()
 	storeClient := newFakeManagedIdentityStore()
 	zitiClient := &fakeZitiClient{}
@@ -410,8 +424,27 @@ func TestPatchIdentityRoleAttributesReportsUnsupported(t *testing.T) {
 	_, err := server.PatchIdentityRoleAttributes(ctx, &zitimanagementv1.PatchIdentityRoleAttributesRequest{
 		ZitiIdentityId: "identity-id",
 		Add:            []string{"group-one"},
+		Remove:         []string{"group-two"},
 	})
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("expected failed precondition, got %v", err)
+	if err != nil {
+		t.Fatalf("patch identity role attributes: %v", err)
+	}
+	if zitiClient.patchIdentityCall == nil || zitiClient.patchIdentityCall.zitiID != "identity-id" || !reflect.DeepEqual(zitiClient.patchIdentityCall.add, []string{"group-one"}) || !reflect.DeepEqual(zitiClient.patchIdentityCall.remove, []string{"group-two"}) {
+		t.Fatalf("unexpected patch call: %#v", zitiClient.patchIdentityCall)
+	}
+}
+
+func TestPatchIdentityRoleAttributesMapsNotFound(t *testing.T) {
+	ctx := context.Background()
+	storeClient := newFakeManagedIdentityStore()
+	zitiClient := &fakeZitiClient{patchIdentityErr: ziti.ErrIdentityNotFound}
+	server := New(storeClient, zitiClient, time.Minute, false)
+
+	_, err := server.PatchIdentityRoleAttributes(ctx, &zitimanagementv1.PatchIdentityRoleAttributesRequest{
+		ZitiIdentityId: "identity-id",
+		Add:            []string{"group-one"},
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("expected not found, got %v", err)
 	}
 }

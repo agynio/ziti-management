@@ -30,7 +30,6 @@ import (
 var ErrIdentityNotFound = errors.New("identity not found")
 var ErrServiceNotFound = errors.New("service not found")
 var ErrServicePolicyNotFound = errors.New("service policy not found")
-var ErrRoleAttributePatchUnsupported = errors.New("identity role-attribute delta patch unsupported by OpenZiti management API")
 
 const (
 	roleAttributeAgents  = "agents"
@@ -44,6 +43,7 @@ type identityService interface {
 	DeleteIdentity(params *identity.DeleteIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DeleteIdentityOK, error)
 	DetailIdentity(params *identity.DetailIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DetailIdentityOK, error)
 	ListIdentities(params *identity.ListIdentitiesParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.ListIdentitiesOK, error)
+	PatchIdentity(params *identity.PatchIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.PatchIdentityOK, error)
 }
 
 type serviceService interface {
@@ -726,7 +726,60 @@ func (c *Client) CreateTunnelIdentity(ctx context.Context, networkID, tunnelCred
 }
 
 func (c *Client) PatchIdentityRoleAttributes(ctx context.Context, zitiIdentityID string, add, remove []string) error {
-	return ErrRoleAttributePatchUnsupported
+	detail, err := c.detailIdentity(ctx, zitiIdentityID)
+	if err != nil {
+		return err
+	}
+
+	roleAttributes := patchRoleAttributes(detail.RoleAttributes, add, remove)
+	params := identity.NewPatchIdentityParamsWithContext(ctx)
+	params.ID = zitiIdentityID
+	params.Identity = &rest_model.IdentityPatch{RoleAttributes: &roleAttributes}
+	err = c.withReauth(func() error {
+		identityClient := c.identityClient()
+		_, callErr := identityClient.PatchIdentity(params, nil)
+		return callErr
+	})
+	if err != nil {
+		var notFound *identity.PatchIdentityNotFound
+		if errors.As(err, &notFound) {
+			return ErrIdentityNotFound
+		}
+		return fmt.Errorf("patch ziti identity role attributes: %w", err)
+	}
+	return nil
+}
+
+func patchRoleAttributes(current *rest_model.Attributes, add, remove []string) rest_model.Attributes {
+	roleAttributeSet := make(map[string]struct{}, len(add))
+	if current != nil {
+		for _, roleAttribute := range *current {
+			roleAttributeSet[roleAttribute] = struct{}{}
+		}
+	}
+	for _, roleAttribute := range add {
+		roleAttributeSet[roleAttribute] = struct{}{}
+	}
+	for _, roleAttribute := range remove {
+		delete(roleAttributeSet, roleAttribute)
+	}
+
+	roleAttributes := make(rest_model.Attributes, 0, len(roleAttributeSet))
+	if current != nil {
+		for _, roleAttribute := range *current {
+			if _, ok := roleAttributeSet[roleAttribute]; ok {
+				roleAttributes = append(roleAttributes, roleAttribute)
+				delete(roleAttributeSet, roleAttribute)
+			}
+		}
+	}
+	for _, roleAttribute := range add {
+		if _, ok := roleAttributeSet[roleAttribute]; ok {
+			roleAttributes = append(roleAttributes, roleAttribute)
+			delete(roleAttributeSet, roleAttribute)
+		}
+	}
+	return roleAttributes
 }
 
 func (c *Client) GetIdentityLiveness(ctx context.Context, zitiIdentityID string) (IdentityLiveness, error) {
@@ -751,6 +804,10 @@ func (c *Client) detailIdentity(ctx context.Context, zitiIdentityID string) (*re
 		return callErr
 	})
 	if err != nil {
+		var notFound *identity.DetailIdentityNotFound
+		if errors.As(err, &notFound) {
+			return nil, ErrIdentityNotFound
+		}
 		return nil, fmt.Errorf("detail ziti identity: %w", err)
 	}
 	if detail.Payload == nil || detail.Payload.Data == nil {
