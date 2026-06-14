@@ -210,6 +210,7 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 	agentID := uuid.New()
 	workloadID := uuid.New()
 	createdID := "created-id"
+	enrollmentID := "enrollment-id"
 	jwt := "jwt-token"
 
 	fake := &fakeIdentityService{
@@ -220,20 +221,28 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
 			assertCreateExternalID(t, params, workloadID)
 			assertCreateAgentRoleAttributes(t, params, agentID, workloadID)
-			if params.Identity.Enrollment == nil || !params.Identity.Enrollment.Ott {
-				t.Fatalf("expected ott enrollment on agent identity")
+			if params.Identity.Enrollment != nil {
+				t.Fatalf("agent identity create must not request identity detail enrollment: %#v", params.Identity.Enrollment)
 			}
 			return createIdentityResponse(createdID), nil
 		},
-		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			if params == nil || params.ID != createdID {
-				t.Fatalf("expected detail identity id %q, got %#v", createdID, params)
+	}
+	fakeEnrollment := &fakeEnrollmentService{
+		createEnrollmentFunc: func(params *enrollment.CreateEnrollmentParams) (*enrollment.CreateEnrollmentCreated, error) {
+			if params == nil || params.Enrollment == nil || params.Enrollment.IdentityID == nil || *params.Enrollment.IdentityID != createdID {
+				t.Fatalf("expected create enrollment identity id %q, got %#v", createdID, params)
 			}
-			return detailIdentityResponse(jwt), nil
+			return createEnrollmentResponse(enrollmentID), nil
+		},
+		detailEnrollmentFunc: func(params *enrollment.DetailEnrollmentParams) (*enrollment.DetailEnrollmentOK, error) {
+			if params == nil || params.ID != enrollmentID {
+				t.Fatalf("expected detail enrollment id %q, got %#v", enrollmentID, params)
+			}
+			return detailEnrollmentResponse(jwt), nil
 		},
 	}
 
-	client := &Client{identity: fake}
+	client := &Client{identity: fake, enrollment: fakeEnrollment}
 	zitiID, token, err := client.CreateAgentIdentity(ctx, agentID, workloadID)
 	if err != nil {
 		t.Fatalf("create agent identity: %v", err)
@@ -257,21 +266,26 @@ func TestCreateAgentIdentityWithOptionsAddsRolesAndTags(t *testing.T) {
 		},
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
 			assertCreateAgentRoleAttributes(t, params, agentID, workloadID, "group-one")
-			if params.Identity.Enrollment == nil || !params.Identity.Enrollment.Ott {
-				t.Fatalf("expected ott enrollment on agent identity")
+			if params.Identity.Enrollment != nil {
+				t.Fatalf("agent identity create must not request identity detail enrollment: %#v", params.Identity.Enrollment)
 			}
 			assertTags(t, params.Identity.Tags, map[string]string{"network": "net-1"})
 			return createIdentityResponse("identity-id"), nil
 		},
-		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			if params == nil || params.ID != "identity-id" {
-				t.Fatalf("expected detail identity-id, got %#v", params)
+	}
+	fakeEnrollment := &fakeEnrollmentService{
+		createEnrollmentFunc: func(params *enrollment.CreateEnrollmentParams) (*enrollment.CreateEnrollmentCreated, error) {
+			if params == nil || params.Enrollment == nil || params.Enrollment.IdentityID == nil || *params.Enrollment.IdentityID != "identity-id" {
+				t.Fatalf("expected enrollment for identity-id, got %#v", params)
 			}
-			return detailIdentityResponse("jwt-token"), nil
+			return createEnrollmentResponse("enrollment-id"), nil
+		},
+		detailEnrollmentFunc: func(params *enrollment.DetailEnrollmentParams) (*enrollment.DetailEnrollmentOK, error) {
+			return detailEnrollmentResponse("jwt-token"), nil
 		},
 	}
 
-	client := &Client{identity: fake}
+	client := &Client{identity: fake, enrollment: fakeEnrollment}
 	_, _, err := client.CreateAgentIdentityWithOptions(ctx, agentID, workloadID, []string{"group-one"}, map[string]string{"network": "net-1"})
 	if err != nil {
 		t.Fatalf("create agent identity: %v", err)
@@ -417,7 +431,7 @@ func TestListServicesUsesRoleFilterParameter(t *testing.T) {
 			if params.Filter != nil && strings.Contains(*params.Filter, "roleAttributes") {
 				t.Fatalf("role attributes must use roleFilter, got filter %q", *params.Filter)
 			}
-			if !reflect.DeepEqual(params.RoleFilter, []string{"role-one", "role-two"}) {
+			if !reflect.DeepEqual(params.RoleFilter, []string{"#role-one", "#role-two"}) {
 				t.Fatalf("unexpected role filter: %#v", params.RoleFilter)
 			}
 			return listServicesResponse(nil, 100, 0, 0), nil
@@ -426,6 +440,27 @@ func TestListServicesUsesRoleFilterParameter(t *testing.T) {
 
 	client := &Client{service: fake}
 	_, err := client.ListServices(ctx, ServiceListFilter{RoleAttributes: []string{"role-one", "role-two"}})
+	if err != nil {
+		t.Fatalf("list services: %v", err)
+	}
+}
+
+func TestListServicesPreservesExplicitRoleFilterPrefixes(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeServiceService{
+		listServicesFunc: func(params *service.ListServicesParams) (*service.ListServicesOK, error) {
+			if params == nil {
+				t.Fatal("expected list services params")
+			}
+			if !reflect.DeepEqual(params.RoleFilter, []string{"#role-one", "@service-one"}) {
+				t.Fatalf("unexpected role filter: %#v", params.RoleFilter)
+			}
+			return listServicesResponse(nil, 100, 0, 0), nil
+		},
+	}
+
+	client := &Client{service: fake}
+	_, err := client.ListServices(ctx, ServiceListFilter{RoleAttributes: []string{"#role-one", "@service-one"}})
 	if err != nil {
 		t.Fatalf("list services: %v", err)
 	}

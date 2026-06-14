@@ -336,6 +336,22 @@ func tagFilter(tags map[string]string) string {
 	return strings.Join(filters, " and ")
 }
 
+func roleFilters(attributes []string) []string {
+	filters := make([]string, 0, len(attributes))
+	for _, attribute := range attributes {
+		trimmed := strings.TrimSpace(attribute)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "@") {
+			filters = append(filters, trimmed)
+			continue
+		}
+		filters = append(filters, "#"+trimmed)
+	}
+	return filters
+}
+
 func listPagination(pageSize int32, pageToken string) (int64, int64, error) {
 	limit := int64(pageSize)
 	if limit <= 0 {
@@ -458,7 +474,6 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 		IsAdmin:        &isAdmin,
 		RoleAttributes: &roleAttrs,
 		ExternalID:     &externalID,
-		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 		Tags:           tagsFromMap(tags),
 	}
 
@@ -467,7 +482,7 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 		return "", "", err
 	}
 
-	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
+	jwt, err := c.createEnrollmentJWT(ctx, zitiID)
 	if err != nil {
 		return "", "", err
 	}
@@ -1361,7 +1376,7 @@ func (c *Client) ListServices(ctx context.Context, filter ServiceListFilter) (Se
 		params.Filter = &queryFilter
 	}
 	if len(filter.RoleAttributes) > 0 {
-		params.RoleFilter = filter.RoleAttributes
+		params.RoleFilter = roleFilters(filter.RoleAttributes)
 	}
 	var envelope *rest_model.ListServicesEnvelope
 	err = c.withReauth(func() error {
