@@ -458,6 +458,7 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 		IsAdmin:        &isAdmin,
 		RoleAttributes: &roleAttrs,
 		ExternalID:     &externalID,
+		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 		Tags:           tagsFromMap(tags),
 	}
 
@@ -466,7 +467,7 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 		return "", "", err
 	}
 
-	jwt, err := c.createEnrollmentJWT(ctx, zitiID)
+	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
 	if err != nil {
 		return "", "", err
 	}
