@@ -31,6 +31,7 @@ type fakeIdentityService struct {
 
 type fakeEnrollmentService struct {
 	createEnrollmentFunc func(params *enrollment.CreateEnrollmentParams) (*enrollment.CreateEnrollmentCreated, error)
+	deleteEnrollmentFunc func(params *enrollment.DeleteEnrollmentParams) (*enrollment.DeleteEnrollmentOK, error)
 	detailEnrollmentFunc func(params *enrollment.DetailEnrollmentParams) (*enrollment.DetailEnrollmentOK, error)
 }
 
@@ -67,6 +68,13 @@ func (f *fakeEnrollmentService) CreateEnrollment(params *enrollment.CreateEnroll
 		return nil, errors.New("create enrollment not stubbed")
 	}
 	return f.createEnrollmentFunc(params)
+}
+
+func (f *fakeEnrollmentService) DeleteEnrollment(params *enrollment.DeleteEnrollmentParams, _ runtime.ClientAuthInfoWriter, _ ...enrollment.ClientOption) (*enrollment.DeleteEnrollmentOK, error) {
+	if f.deleteEnrollmentFunc == nil {
+		return nil, errors.New("delete enrollment not stubbed")
+	}
+	return f.deleteEnrollmentFunc(params)
 }
 
 func (f *fakeEnrollmentService) DetailEnrollment(params *enrollment.DetailEnrollmentParams, _ runtime.ClientAuthInfoWriter, _ ...enrollment.ClientOption) (*enrollment.DetailEnrollmentOK, error) {
@@ -211,7 +219,13 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 	workloadID := uuid.New()
 	createdID := "created-id"
 	enrollmentID := "enrollment-id"
-	jwt := "jwt-token"
+	enrollmentJWT := "jwt-token"
+	stubEnrollmentParser(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
+		if token != enrollmentJWT {
+			t.Fatalf("unexpected token: %s", token)
+		}
+		return &sdkziti.EnrollmentClaims{EnrollmentMethod: rest_model.EnrollmentCreateMethodOtt, RegisteredClaims: jwtlibClaims("jwt-token-id")}, nil, nil
+	})
 
 	fake := &fakeIdentityService{
 		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
@@ -226,8 +240,17 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 			}
 			return createIdentityResponse(createdID), nil
 		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponseWithEnrollmentIDs("stale-enrollment-id"), nil
+		},
 	}
 	fakeEnrollment := &fakeEnrollmentService{
+		deleteEnrollmentFunc: func(params *enrollment.DeleteEnrollmentParams) (*enrollment.DeleteEnrollmentOK, error) {
+			if params == nil || params.ID != "stale-enrollment-id" {
+				t.Fatalf("expected stale enrollment delete, got %#v", params)
+			}
+			return &enrollment.DeleteEnrollmentOK{}, nil
+		},
 		createEnrollmentFunc: func(params *enrollment.CreateEnrollmentParams) (*enrollment.CreateEnrollmentCreated, error) {
 			if params == nil || params.Enrollment == nil || params.Enrollment.IdentityID == nil || *params.Enrollment.IdentityID != createdID {
 				t.Fatalf("expected create enrollment identity id %q, got %#v", createdID, params)
@@ -238,7 +261,7 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 			if params == nil || params.ID != enrollmentID {
 				t.Fatalf("expected detail enrollment id %q, got %#v", enrollmentID, params)
 			}
-			return detailEnrollmentResponse(jwt), nil
+			return detailEnrollmentResponse(enrollmentJWT), nil
 		},
 	}
 
@@ -250,8 +273,8 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 	if zitiID != createdID {
 		t.Fatalf("expected identity id %q, got %q", createdID, zitiID)
 	}
-	if token != jwt {
-		t.Fatalf("expected jwt %q, got %q", jwt, token)
+	if token != enrollmentJWT {
+		t.Fatalf("expected jwt %q, got %q", enrollmentJWT, token)
 	}
 }
 
@@ -259,6 +282,12 @@ func TestCreateAgentIdentityWithOptionsAddsRolesAndTags(t *testing.T) {
 	ctx := context.Background()
 	agentID := uuid.New()
 	workloadID := uuid.New()
+	stubEnrollmentParser(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
+		if token != "jwt-token" {
+			t.Fatalf("unexpected token: %s", token)
+		}
+		return &sdkziti.EnrollmentClaims{EnrollmentMethod: rest_model.EnrollmentCreateMethodOtt, RegisteredClaims: jwtlibClaims("jwt-token-id")}, nil, nil
+	})
 	fake := &fakeIdentityService{
 		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
 			assertListExternalID(t, params, workloadID)
@@ -272,8 +301,15 @@ func TestCreateAgentIdentityWithOptionsAddsRolesAndTags(t *testing.T) {
 			assertTags(t, params.Identity.Tags, map[string]string{"network": "net-1"})
 			return createIdentityResponse("identity-id"), nil
 		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponseNoEnrollments(), nil
+		},
 	}
 	fakeEnrollment := &fakeEnrollmentService{
+		deleteEnrollmentFunc: func(params *enrollment.DeleteEnrollmentParams) (*enrollment.DeleteEnrollmentOK, error) {
+			t.Fatalf("delete enrollment should not be called without existing enrollments")
+			return nil, nil
+		},
 		createEnrollmentFunc: func(params *enrollment.CreateEnrollmentParams) (*enrollment.CreateEnrollmentCreated, error) {
 			if params == nil || params.Enrollment == nil || params.Enrollment.IdentityID == nil || *params.Enrollment.IdentityID != "identity-id" {
 				t.Fatalf("expected enrollment for identity-id, got %#v", params)
@@ -289,6 +325,42 @@ func TestCreateAgentIdentityWithOptionsAddsRolesAndTags(t *testing.T) {
 	_, _, err := client.CreateAgentIdentityWithOptions(ctx, agentID, workloadID, []string{"group-one"}, map[string]string{"network": "net-1"})
 	if err != nil {
 		t.Fatalf("create agent identity: %v", err)
+	}
+}
+
+func TestCreateAgentIdentityRejectsEnrollmentJWTWithoutTokenID(t *testing.T) {
+	ctx := context.Background()
+	stubEnrollmentParser(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
+		return &sdkziti.EnrollmentClaims{EnrollmentMethod: rest_model.EnrollmentCreateMethodOtt}, nil, nil
+	})
+	fakeIdentity := &fakeIdentityService{
+		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
+			return listIdentitiesResponse(nil, 100, 0, 0), nil
+		},
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			return createIdentityResponse("identity-id"), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponseNoEnrollments(), nil
+		},
+	}
+	fakeEnrollment := &fakeEnrollmentService{
+		deleteEnrollmentFunc: func(params *enrollment.DeleteEnrollmentParams) (*enrollment.DeleteEnrollmentOK, error) {
+			t.Fatalf("delete enrollment should not be called without existing enrollments")
+			return nil, nil
+		},
+		createEnrollmentFunc: func(params *enrollment.CreateEnrollmentParams) (*enrollment.CreateEnrollmentCreated, error) {
+			return createEnrollmentResponse("enrollment-id"), nil
+		},
+		detailEnrollmentFunc: func(params *enrollment.DetailEnrollmentParams) (*enrollment.DetailEnrollmentOK, error) {
+			return detailEnrollmentResponse("jwt-token"), nil
+		},
+	}
+
+	client := &Client{identity: fakeIdentity, enrollment: fakeEnrollment}
+	_, _, err := client.CreateAgentIdentity(ctx, uuid.New(), uuid.New())
+	if err == nil || !strings.Contains(err.Error(), "missing token id") {
+		t.Fatalf("expected missing token id error, got %v", err)
 	}
 }
 
@@ -325,12 +397,12 @@ func TestCreateTunnelIdentityCreatesTunnelRolesAndTags(t *testing.T) {
 func TestCreateTunnelIdentityUsesJWTExpirationWhenControllerExpiryMissing(t *testing.T) {
 	ctx := context.Background()
 	expiresAt := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
-	stubEnrollmentFuncs(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
+	stubEnrollmentParser(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
 		if token != "tunnel-jwt" {
 			t.Fatalf("unexpected token: %s", token)
 		}
 		return &sdkziti.EnrollmentClaims{RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(expiresAt)}}, nil, nil
-	}, nil)
+	})
 	fake := &fakeIdentityService{
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
 			return createIdentityResponse("tunnel-id"), nil
@@ -1104,6 +1176,15 @@ func assertSameStrings(t *testing.T, actual, expected []string) {
 	}
 }
 
+func stubEnrollmentParser(t *testing.T, parse func(string) (*sdkziti.EnrollmentClaims, *jwt.Token, error)) {
+	t.Helper()
+	originalParse := parseEnrollmentToken
+	parseEnrollmentToken = parse
+	t.Cleanup(func() {
+		parseEnrollmentToken = originalParse
+	})
+}
+
 func createIdentityResponse(identityID string) *identity.CreateIdentityCreated {
 	return &identity.CreateIdentityCreated{Payload: &rest_model.CreateEnvelope{Data: &rest_model.CreateLocation{ID: identityID}}}
 }
@@ -1117,6 +1198,10 @@ func detailEnrollmentResponse(jwt string) *enrollment.DetailEnrollmentOK {
 	return &enrollment.DetailEnrollmentOK{Payload: &rest_model.DetailEnrollmentEnvelope{Data: &rest_model.EnrollmentDetail{JWT: jwt, ExpiresAt: &expiresAt}}}
 }
 
+func jwtlibClaims(id string) jwt.RegisteredClaims {
+	return jwt.RegisteredClaims{ID: id}
+}
+
 func detailIdentityResponse(jwt string) *identity.DetailIdentityOK {
 	expiresAt := time.Now().Add(time.Hour).UTC()
 	return detailIdentityResponseWithExpiry(jwt, expiresAt)
@@ -1126,6 +1211,16 @@ func detailIdentityResponseWithExpiry(jwt string, expiresAt time.Time) *identity
 	expires := strfmt.DateTime(expiresAt)
 	return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{Enrollment: &rest_model.IdentityEnrollments{
 		Ott: &rest_model.IdentityEnrollmentsOtt{JWT: jwt, ExpiresAt: expires},
+	}}}}
+}
+
+func detailIdentityResponseNoEnrollments() *identity.DetailIdentityOK {
+	return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{Enrollment: &rest_model.IdentityEnrollments{}}}}
+}
+
+func detailIdentityResponseWithEnrollmentIDs(ottID string) *identity.DetailIdentityOK {
+	return &identity.DetailIdentityOK{Payload: &rest_model.DetailIdentityEnvelope{Data: &rest_model.IdentityDetail{Enrollment: &rest_model.IdentityEnrollments{
+		Ott: &rest_model.IdentityEnrollmentsOtt{ID: ottID},
 	}}}}
 }
 

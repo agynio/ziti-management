@@ -51,6 +51,7 @@ type identityService interface {
 
 type enrollmentService interface {
 	CreateEnrollment(params *enrollment.CreateEnrollmentParams, authInfo runtime.ClientAuthInfoWriter, opts ...enrollment.ClientOption) (*enrollment.CreateEnrollmentCreated, error)
+	DeleteEnrollment(params *enrollment.DeleteEnrollmentParams, authInfo runtime.ClientAuthInfoWriter, opts ...enrollment.ClientOption) (*enrollment.DeleteEnrollmentOK, error)
 	DetailEnrollment(params *enrollment.DetailEnrollmentParams, authInfo runtime.ClientAuthInfoWriter, opts ...enrollment.ClientOption) (*enrollment.DetailEnrollmentOK, error)
 }
 
@@ -482,11 +483,57 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 		return "", "", err
 	}
 
-	jwt, err := c.createEnrollmentJWT(ctx, zitiID)
+	jwt, err := c.refreshEnrollmentJWT(ctx, zitiID)
 	if err != nil {
 		return "", "", err
 	}
 	return zitiID, jwt.Token, nil
+}
+
+func (c *Client) refreshEnrollmentJWT(ctx context.Context, zitiIdentityID string) (EnrollmentJWT, error) {
+	if err := c.deleteIdentityEnrollments(ctx, zitiIdentityID); err != nil {
+		return EnrollmentJWT{}, err
+	}
+	return c.createEnrollmentJWT(ctx, zitiIdentityID)
+}
+
+func (c *Client) deleteIdentityEnrollments(ctx context.Context, zitiIdentityID string) error {
+	detail, err := c.detailIdentity(ctx, zitiIdentityID)
+	if err != nil {
+		return err
+	}
+	if detail.Enrollment == nil {
+		return nil
+	}
+	if detail.Enrollment.Ott != nil {
+		if err := c.deleteEnrollment(ctx, rest_model.EnrollmentCreateMethodOtt, detail.Enrollment.Ott.ID); err != nil {
+			return err
+		}
+	}
+	if detail.Enrollment.Ottca != nil {
+		if err := c.deleteEnrollment(ctx, rest_model.EnrollmentCreateMethodOttca, detail.Enrollment.Ottca.ID); err != nil {
+			return err
+		}
+	}
+	if detail.Enrollment.Updb != nil {
+		if err := c.deleteEnrollment(ctx, rest_model.EnrollmentCreateMethodUpdb, detail.Enrollment.Updb.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) deleteEnrollment(ctx context.Context, method string, enrollmentID string) error {
+	if enrollmentID == "" {
+		return fmt.Errorf("identity %s enrollment missing id", method)
+	}
+	params := enrollment.NewDeleteEnrollmentParamsWithContext(ctx)
+	params.ID = enrollmentID
+	return c.withReauth(func() error {
+		enrollmentClient := c.enrollmentClient()
+		_, err := enrollmentClient.DeleteEnrollment(params, nil)
+		return err
+	})
 }
 
 func (c *Client) createEnrollmentJWT(ctx context.Context, zitiIdentityID string) (EnrollmentJWT, error) {
@@ -528,6 +575,16 @@ func (c *Client) createEnrollmentJWT(ctx context.Context, zitiIdentityID string)
 	data := detail.Payload.Data
 	if data.JWT == "" {
 		return EnrollmentJWT{}, errors.New("detail ziti enrollment response missing enrollment jwt")
+	}
+	claims, _, err := parseEnrollmentToken(data.JWT)
+	if err != nil {
+		return EnrollmentJWT{}, fmt.Errorf("parse enrollment token: %w", err)
+	}
+	if claims.EnrollmentMethod != method {
+		return EnrollmentJWT{}, fmt.Errorf("enrollment jwt method %q does not match enrollment method %q", claims.EnrollmentMethod, method)
+	}
+	if claims.ID == "" {
+		return EnrollmentJWT{}, errors.New("enrollment jwt missing token id")
 	}
 	if data.ExpiresAt != nil {
 		expiresAt = time.Time(*data.ExpiresAt)
