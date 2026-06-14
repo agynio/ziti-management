@@ -17,10 +17,8 @@ import (
 
 	"github.com/agynio/ziti-management/internal/id"
 	"github.com/go-openapi/runtime"
-	"github.com/go-openapi/strfmt"
 	"github.com/google/uuid"
 	"github.com/openziti/edge-api/rest_management_api_client/config"
-	"github.com/openziti/edge-api/rest_management_api_client/enrollment"
 	"github.com/openziti/edge-api/rest_management_api_client/identity"
 	"github.com/openziti/edge-api/rest_management_api_client/service"
 	"github.com/openziti/edge-api/rest_management_api_client/service_policy"
@@ -47,11 +45,6 @@ type identityService interface {
 	DetailIdentity(params *identity.DetailIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.DetailIdentityOK, error)
 	ListIdentities(params *identity.ListIdentitiesParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.ListIdentitiesOK, error)
 	PatchIdentity(params *identity.PatchIdentityParams, authInfo runtime.ClientAuthInfoWriter, opts ...identity.ClientOption) (*identity.PatchIdentityOK, error)
-}
-
-type enrollmentService interface {
-	CreateEnrollment(params *enrollment.CreateEnrollmentParams, authInfo runtime.ClientAuthInfoWriter, opts ...enrollment.ClientOption) (*enrollment.CreateEnrollmentCreated, error)
-	DetailEnrollment(params *enrollment.DetailEnrollmentParams, authInfo runtime.ClientAuthInfoWriter, opts ...enrollment.ClientOption) (*enrollment.DetailEnrollmentOK, error)
 }
 
 type serviceService interface {
@@ -81,7 +74,6 @@ type servicePolicyService interface {
 type Client struct {
 	mu               sync.Mutex
 	identity         identityService
-	enrollment       enrollmentService
 	service          serviceService
 	config           configService
 	servicePolicy    servicePolicyService
@@ -107,7 +99,6 @@ func NewClient(controllerURL, certFile, keyFile, caFile string) (*Client, error)
 	}
 	return &Client{
 		identity:      client.Identity,
-		enrollment:    client.Enrollment,
 		service:       client.Service,
 		config:        client.Config,
 		servicePolicy: client.ServicePolicy,
@@ -167,12 +158,6 @@ func (c *Client) identityClient() identityService {
 	return c.identity
 }
 
-func (c *Client) enrollmentClient() enrollmentService {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.enrollment
-}
-
 func (c *Client) serviceClient() serviceService {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -208,7 +193,6 @@ func (c *Client) reauthenticate() error {
 		return fmt.Errorf("create edge management client: %w", err)
 	}
 	c.identity = client.Identity
-	c.enrollment = client.Enrollment
 	c.service = client.Service
 	c.config = client.Config
 	c.servicePolicy = client.ServicePolicy
@@ -458,6 +442,7 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 		IsAdmin:        &isAdmin,
 		RoleAttributes: &roleAttrs,
 		ExternalID:     &externalID,
+		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 		Tags:           tagsFromMap(tags),
 	}
 
@@ -466,57 +451,11 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 		return "", "", err
 	}
 
-	jwt, err := c.createEnrollmentJWT(ctx, zitiID)
+	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
 	if err != nil {
 		return "", "", err
 	}
 	return zitiID, jwt.Token, nil
-}
-
-func (c *Client) createEnrollmentJWT(ctx context.Context, zitiIdentityID string) (EnrollmentJWT, error) {
-	method := rest_model.EnrollmentCreateMethodOtt
-	expiresAt := time.Now().Add(time.Hour).UTC()
-	expires := strfmt.DateTime(expiresAt)
-	params := enrollment.NewCreateEnrollmentParamsWithContext(ctx)
-	params.Enrollment = &rest_model.EnrollmentCreate{IdentityID: &zitiIdentityID, Method: &method, ExpiresAt: &expires}
-	var created *enrollment.CreateEnrollmentCreated
-	err := c.withReauth(func() error {
-		var callErr error
-		enrollmentClient := c.enrollmentClient()
-		created, callErr = enrollmentClient.CreateEnrollment(params, nil)
-		return callErr
-	})
-	if err != nil {
-		return EnrollmentJWT{}, fmt.Errorf("create ziti enrollment: %w", err)
-	}
-	enrollmentID, err := extractCreateID("enrollment", created.Payload)
-	if err != nil {
-		return EnrollmentJWT{}, err
-	}
-
-	detailParams := enrollment.NewDetailEnrollmentParamsWithContext(ctx)
-	detailParams.ID = enrollmentID
-	var detail *enrollment.DetailEnrollmentOK
-	err = c.withReauth(func() error {
-		var callErr error
-		enrollmentClient := c.enrollmentClient()
-		detail, callErr = enrollmentClient.DetailEnrollment(detailParams, nil)
-		return callErr
-	})
-	if err != nil {
-		return EnrollmentJWT{}, fmt.Errorf("detail ziti enrollment: %w", err)
-	}
-	if detail.Payload == nil || detail.Payload.Data == nil {
-		return EnrollmentJWT{}, errors.New("detail ziti enrollment response missing data")
-	}
-	data := detail.Payload.Data
-	if data.JWT == "" {
-		return EnrollmentJWT{}, errors.New("detail ziti enrollment response missing enrollment jwt")
-	}
-	if data.ExpiresAt != nil {
-		expiresAt = time.Time(*data.ExpiresAt)
-	}
-	return EnrollmentJWT{Token: data.JWT, ExpiresAt: expiresAt}, nil
 }
 
 func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error) {
