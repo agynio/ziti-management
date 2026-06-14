@@ -1359,6 +1359,9 @@ func (c *Client) ListServices(ctx context.Context, filter ServiceListFilter) (Se
 	if queryFilter != "" {
 		params.Filter = &queryFilter
 	}
+	if len(filter.RoleAttributes) > 0 {
+		params.RoleFilter = filter.RoleAttributes
+	}
 	var envelope *rest_model.ListServicesEnvelope
 	err = c.withReauth(func() error {
 		serviceClient := c.serviceClient()
@@ -1580,9 +1583,6 @@ func serviceFilter(filter ServiceListFilter) string {
 	}
 	if filter.NamePrefix != "" {
 		parts = append(parts, fmt.Sprintf(`name contains "%s"`, escapeFilterValue(filter.NamePrefix)))
-	}
-	for _, role := range filter.RoleAttributes {
-		parts = append(parts, fmt.Sprintf(`roleAttributes contains "%s"`, escapeFilterValue(role)))
 	}
 	return strings.Join(parts, " and ")
 }

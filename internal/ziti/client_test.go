@@ -415,6 +415,30 @@ func TestListServicesByTagConvertsRequestAndResponse(t *testing.T) {
 	}
 }
 
+func TestListServicesUsesRoleFilterParameter(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeServiceService{
+		listServicesFunc: func(params *service.ListServicesParams) (*service.ListServicesOK, error) {
+			if params == nil {
+				t.Fatal("expected list services params")
+			}
+			if params.Filter != nil && strings.Contains(*params.Filter, "roleAttributes") {
+				t.Fatalf("role attributes must use roleFilter, got filter %q", *params.Filter)
+			}
+			if !reflect.DeepEqual(params.RoleFilter, []string{"role-one", "role-two"}) {
+				t.Fatalf("unexpected role filter: %#v", params.RoleFilter)
+			}
+			return listServicesResponse(nil, 100, 0, 0), nil
+		},
+	}
+
+	client := &Client{service: fake}
+	_, err := client.ListServices(ctx, ServiceListFilter{RoleAttributes: []string{"role-one", "role-two"}})
+	if err != nil {
+		t.Fatalf("list services: %v", err)
+	}
+}
+
 func TestListIdentitiesByTagConvertsRequestAndResponse(t *testing.T) {
 	ctx := context.Background()
 	identityID := "identity-id"
