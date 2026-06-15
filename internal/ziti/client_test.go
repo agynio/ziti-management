@@ -235,6 +235,7 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 		return &sdkziti.EnrollmentClaims{EnrollmentMethod: rest_model.EnrollmentCreateMethodOtt, RegisteredClaims: jwtlibClaims("jwt-token-id")}, nil, nil
 	})
 
+	detailCalls := 0
 	fake := &fakeIdentityService{
 		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
 			assertListExternalID(t, params, workloadID)
@@ -249,7 +250,14 @@ func TestCreateAgentIdentityCreatesIdentity(t *testing.T) {
 			return createIdentityResponse(createdID), nil
 		},
 		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
-			return detailIdentityResponseWithEnrollmentIDs("stale-enrollment-id"), nil
+			if params == nil || params.ID != createdID {
+				t.Fatalf("expected detail identity id %q, got %#v", createdID, params)
+			}
+			detailCalls++
+			if detailCalls == 1 {
+				return detailIdentityResponseWithEnrollmentIDs("stale-enrollment-id"), nil
+			}
+			return detailIdentityResponseNoEnrollments(), nil
 		},
 	}
 	fakeEnrollment := &fakeEnrollmentService{

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -385,7 +386,9 @@ func (c *Client) deleteIdentityByExternalID(ctx context.Context, externalID stri
 	if err != nil {
 		return err
 	}
+	log.Printf("ziti identity cleanup by external id external_id=%s matches=%d", externalID, len(identityIDs))
 	for _, identityID := range identityIDs {
+		log.Printf("ziti identity cleanup deleting external_id=%s ziti_identity_id=%s", externalID, identityID)
 		if err := c.DeleteIdentity(ctx, identityID); err != nil && !errors.Is(err, ErrIdentityNotFound) {
 			return err
 		}
@@ -482,11 +485,16 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 	if err != nil {
 		return "", "", err
 	}
+	log.Printf("ziti agent identity created agent_id=%s workload_id=%s external_id=%s ziti_identity_id=%s", agentID.String(), workloadID.String(), externalID, zitiID)
 
 	jwt, err := c.refreshEnrollmentJWT(ctx, zitiID)
 	if err != nil {
 		return "", "", err
 	}
+	if _, err := c.detailIdentity(ctx, zitiID); err != nil {
+		return "", "", fmt.Errorf("verify ziti agent identity after enrollment creation: %w", err)
+	}
+	log.Printf("ziti agent identity enrollment ready agent_id=%s workload_id=%s ziti_identity_id=%s enrollment_token_id=%s expires_at=%s", agentID.String(), workloadID.String(), zitiID, jwt.TokenID, jwt.ExpiresAt.Format(time.RFC3339))
 	return zitiID, jwt.Token, nil
 }
 
@@ -503,19 +511,23 @@ func (c *Client) deleteIdentityEnrollments(ctx context.Context, zitiIdentityID s
 		return err
 	}
 	if detail.Enrollment == nil {
+		log.Printf("ziti identity enrollment cleanup skipped ziti_identity_id=%s reason=no_enrollment", zitiIdentityID)
 		return nil
 	}
 	if detail.Enrollment.Ott != nil {
+		log.Printf("ziti identity enrollment cleanup deleting ziti_identity_id=%s method=%s enrollment_id=%s token=%s", zitiIdentityID, rest_model.EnrollmentCreateMethodOtt, detail.Enrollment.Ott.ID, detail.Enrollment.Ott.Token)
 		if err := c.deleteEnrollment(ctx, rest_model.EnrollmentCreateMethodOtt, detail.Enrollment.Ott.ID); err != nil {
 			return err
 		}
 	}
 	if detail.Enrollment.Ottca != nil {
+		log.Printf("ziti identity enrollment cleanup deleting ziti_identity_id=%s method=%s enrollment_id=%s token=%s", zitiIdentityID, rest_model.EnrollmentCreateMethodOttca, detail.Enrollment.Ottca.ID, detail.Enrollment.Ottca.Token)
 		if err := c.deleteEnrollment(ctx, rest_model.EnrollmentCreateMethodOttca, detail.Enrollment.Ottca.ID); err != nil {
 			return err
 		}
 	}
 	if detail.Enrollment.Updb != nil {
+		log.Printf("ziti identity enrollment cleanup deleting ziti_identity_id=%s method=%s enrollment_id=%s token=%s", zitiIdentityID, rest_model.EnrollmentCreateMethodUpdb, detail.Enrollment.Updb.ID, detail.Enrollment.Updb.Token)
 		if err := c.deleteEnrollment(ctx, rest_model.EnrollmentCreateMethodUpdb, detail.Enrollment.Updb.ID); err != nil {
 			return err
 		}
@@ -589,7 +601,15 @@ func (c *Client) createEnrollmentJWT(ctx context.Context, zitiIdentityID string)
 	if data.ExpiresAt != nil {
 		expiresAt = time.Time(*data.ExpiresAt)
 	}
-	return EnrollmentJWT{Token: data.JWT, ExpiresAt: expiresAt}, nil
+	log.Printf("ziti enrollment created ziti_identity_id=%s enrollment_id=%s token=%s token_id=%s method=%s expires_at=%s", zitiIdentityID, enrollmentID, enrollmentDetailToken(data), claims.ID, claims.EnrollmentMethod, expiresAt.Format(time.RFC3339))
+	return EnrollmentJWT{Token: data.JWT, TokenID: claims.ID, ExpiresAt: expiresAt}, nil
+}
+
+func enrollmentDetailToken(detail *rest_model.EnrollmentDetail) string {
+	if detail == nil || detail.Token == nil {
+		return ""
+	}
+	return *detail.Token
 }
 
 func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error) {

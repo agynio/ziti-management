@@ -37,6 +37,7 @@ type IdentityLiveness struct {
 
 type EnrollmentJWT struct {
 	Token     string
+	TokenID   string
 	ExpiresAt time.Time
 }
 
