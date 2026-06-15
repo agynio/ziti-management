@@ -22,8 +22,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
 COPY buf.gen.yaml buf.yaml buf.lock ./
-COPY third_party/agynio-api/proto ./third_party/agynio-api/proto
-RUN buf generate . --path third_party/agynio-api/proto/agynio/api/ziti_management/v1
+COPY proto ./proto
+RUN buf generate . --path proto/agynio/api/ziti_management/v1
 
 COPY . .
 
