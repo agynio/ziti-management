@@ -140,12 +140,28 @@ func (f *fakeZitiClient) CreateServiceWithConfigsAndTags(ctx context.Context, na
 	return f.CreateServiceWithConfigs(ctx, name, roleAttributes, hostV1, interceptV1)
 }
 
+func (f *fakeZitiClient) GetService(_ context.Context, _ string) (ziti.OpenZitiService, error) {
+	return ziti.OpenZitiService{}, errors.New("unexpected get service")
+}
+
+func (f *fakeZitiClient) ListServices(_ context.Context, _ ziti.ServiceListFilter, _ int32, _ string) (ziti.ListResult[ziti.OpenZitiService], error) {
+	return ziti.ListResult[ziti.OpenZitiService]{}, errors.New("unexpected list services")
+}
+
 func (f *fakeZitiClient) CreateServicePolicy(_ context.Context, _ string, _ string, _ []string, _ []string) (string, error) {
 	return "", errors.New("unexpected create service policy")
 }
 
 func (f *fakeZitiClient) CreateServicePolicyWithTags(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string, _ map[string]string) (string, error) {
 	return f.CreateServicePolicy(ctx, name, policyType, identityRoles, serviceRoles)
+}
+
+func (f *fakeZitiClient) GetServicePolicy(_ context.Context, _ string) (ziti.OpenZitiServicePolicy, error) {
+	return ziti.OpenZitiServicePolicy{}, errors.New("unexpected get service policy")
+}
+
+func (f *fakeZitiClient) ListServicePolicies(_ context.Context, _ ziti.ServicePolicyListFilter, _ int32, _ string) (ziti.ListResult[ziti.OpenZitiServicePolicy], error) {
+	return ziti.ListResult[ziti.OpenZitiServicePolicy]{}, errors.New("unexpected list service policies")
 }
 
 func (f *fakeZitiClient) CreateDeviceIdentity(_ context.Context, _ uuid.UUID, _ string) (string, string, error) {

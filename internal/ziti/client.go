@@ -64,6 +64,7 @@ type configService interface {
 type servicePolicyService interface {
 	CreateServicePolicy(params *service_policy.CreateServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.CreateServicePolicyCreated, error)
 	DeleteServicePolicy(params *service_policy.DeleteServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.DeleteServicePolicyOK, error)
+	DetailServicePolicy(params *service_policy.DetailServicePolicyParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.DetailServicePolicyOK, error)
 	ListServicePolicies(params *service_policy.ListServicePoliciesParams, authInfo runtime.ClientAuthInfoWriter, opts ...service_policy.ClientOption) (*service_policy.ListServicePoliciesOK, error)
 }
 
@@ -312,6 +313,40 @@ func tagFilter(tags map[string]string) string {
 	filters := make([]string, 0, len(tags))
 	for key, value := range tags {
 		filters = append(filters, fmt.Sprintf("tags.%s=%s", key, strconv.Quote(value)))
+	}
+	return strings.Join(filters, " and ")
+}
+
+func serviceFilter(filter ServiceListFilter) string {
+	filters := make([]string, 0, 2+len(filter.RoleAttributes))
+	if filter.Name != "" {
+		filters = append(filters, fmt.Sprintf("name = %s", strconv.Quote(filter.Name)))
+	}
+	if filter.NamePrefix != "" {
+		filters = append(filters, fmt.Sprintf("name startsWith %s", strconv.Quote(filter.NamePrefix)))
+	}
+	for _, roleAttribute := range filter.RoleAttributes {
+		filters = append(filters, fmt.Sprintf("roleAttributes contains %s", strconv.Quote(roleAttribute)))
+	}
+	return strings.Join(filters, " and ")
+}
+
+func servicePolicyFilter(filter ServicePolicyListFilter) string {
+	filters := make([]string, 0, 3+len(filter.IdentityRoles)+len(filter.ServiceRoles))
+	if filter.Name != "" {
+		filters = append(filters, fmt.Sprintf("name = %s", strconv.Quote(filter.Name)))
+	}
+	if filter.NamePrefix != "" {
+		filters = append(filters, fmt.Sprintf("name startsWith %s", strconv.Quote(filter.NamePrefix)))
+	}
+	if filter.Type != "" {
+		filters = append(filters, fmt.Sprintf("type = %s", strconv.Quote(filter.Type)))
+	}
+	for _, identityRole := range filter.IdentityRoles {
+		filters = append(filters, fmt.Sprintf("identityRoles contains %s", strconv.Quote(identityRole)))
+	}
+	for _, serviceRole := range filter.ServiceRoles {
+		filters = append(filters, fmt.Sprintf("serviceRoles contains %s", strconv.Quote(serviceRole)))
 	}
 	return strings.Join(filters, " and ")
 }
@@ -649,6 +684,46 @@ func (c *Client) DeleteService(ctx context.Context, serviceID string) error {
 	return fmt.Errorf("delete ziti service: %w", err)
 }
 
+func (c *Client) GetService(ctx context.Context, serviceID string) (OpenZitiService, error) {
+	detail, err := c.detailService(ctx, serviceID)
+	if err != nil {
+		return OpenZitiService{}, err
+	}
+	return toOpenZitiService(detail), nil
+}
+
+func (c *Client) ListServices(ctx context.Context, filter ServiceListFilter, pageSize int32, pageToken string) (ListResult[OpenZitiService], error) {
+	limit, offset, err := listPagination(pageSize, pageToken)
+	if err != nil {
+		return ListResult[OpenZitiService]{}, err
+	}
+	compiledFilter := serviceFilter(filter)
+	params := service.NewListServicesParamsWithContext(ctx)
+	params.Limit = &limit
+	params.Offset = &offset
+	if compiledFilter != "" {
+		params.Filter = &compiledFilter
+	}
+	var listed *service.ListServicesOK
+	err = c.withReauth(func() error {
+		var callErr error
+		serviceClient := c.serviceClient()
+		listed, callErr = serviceClient.ListServices(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return ListResult[OpenZitiService]{}, fmt.Errorf("list ziti services: %w", err)
+	}
+	if listed.Payload == nil {
+		return ListResult[OpenZitiService]{}, errors.New("list ziti services response missing payload")
+	}
+	items := make([]OpenZitiService, 0, len(listed.Payload.Data))
+	for _, serviceDetail := range listed.Payload.Data {
+		items = append(items, toOpenZitiService(serviceDetail))
+	}
+	return ListResult[OpenZitiService]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+}
+
 func (c *Client) CreateServicePolicy(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string) (string, error) {
 	return c.CreateServicePolicyWithTags(ctx, name, policyType, identityRoles, serviceRoles, nil)
 }
@@ -677,6 +752,61 @@ func (c *Client) CreateServicePolicyWithTags(ctx context.Context, name, policyTy
 		}
 		return created.Payload, nil
 	})
+}
+
+func (c *Client) GetServicePolicy(ctx context.Context, policyID string) (OpenZitiServicePolicy, error) {
+	params := service_policy.NewDetailServicePolicyParamsWithContext(ctx)
+	params.ID = policyID
+	var detail *service_policy.DetailServicePolicyOK
+	err := c.withReauth(func() error {
+		var callErr error
+		servicePolicyClient := c.servicePolicyClient()
+		detail, callErr = servicePolicyClient.DetailServicePolicy(params, nil)
+		return callErr
+	})
+	if err != nil {
+		var notFound *service_policy.DetailServicePolicyNotFound
+		if errors.As(err, &notFound) {
+			return OpenZitiServicePolicy{}, ErrServicePolicyNotFound
+		}
+		return OpenZitiServicePolicy{}, fmt.Errorf("detail ziti service policy: %w", err)
+	}
+	if detail.Payload == nil || detail.Payload.Data == nil {
+		return OpenZitiServicePolicy{}, errors.New("detail ziti service policy response missing data")
+	}
+	return toOpenZitiServicePolicy(detail.Payload.Data), nil
+}
+
+func (c *Client) ListServicePolicies(ctx context.Context, filter ServicePolicyListFilter, pageSize int32, pageToken string) (ListResult[OpenZitiServicePolicy], error) {
+	limit, offset, err := listPagination(pageSize, pageToken)
+	if err != nil {
+		return ListResult[OpenZitiServicePolicy]{}, err
+	}
+	compiledFilter := servicePolicyFilter(filter)
+	params := service_policy.NewListServicePoliciesParamsWithContext(ctx)
+	params.Limit = &limit
+	params.Offset = &offset
+	if compiledFilter != "" {
+		params.Filter = &compiledFilter
+	}
+	var listed *service_policy.ListServicePoliciesOK
+	err = c.withReauth(func() error {
+		var callErr error
+		servicePolicyClient := c.servicePolicyClient()
+		listed, callErr = servicePolicyClient.ListServicePolicies(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return ListResult[OpenZitiServicePolicy]{}, fmt.Errorf("list ziti service policies: %w", err)
+	}
+	if listed.Payload == nil {
+		return ListResult[OpenZitiServicePolicy]{}, errors.New("list ziti service policies response missing payload")
+	}
+	items := make([]OpenZitiServicePolicy, 0, len(listed.Payload.Data))
+	for _, policyDetail := range listed.Payload.Data {
+		items = append(items, toOpenZitiServicePolicy(policyDetail))
+	}
+	return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
 }
 
 func (c *Client) DeleteServicePolicy(ctx context.Context, policyID string) error {

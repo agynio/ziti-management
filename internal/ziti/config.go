@@ -67,3 +67,17 @@ type ListResult[T any] struct {
 	Items         []T
 	NextPageToken string
 }
+
+type ServiceListFilter struct {
+	Name           string
+	NamePrefix     string
+	RoleAttributes []string
+}
+
+type ServicePolicyListFilter struct {
+	Name          string
+	NamePrefix    string
+	Type          string
+	IdentityRoles []string
+	ServiceRoles  []string
+}

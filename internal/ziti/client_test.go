@@ -145,6 +145,7 @@ func (f *fakeConfigService) PatchConfig(params *config.PatchConfigParams, _ runt
 type fakeServicePolicyService struct {
 	createServicePolicyFunc func(params *service_policy.CreateServicePolicyParams) (*service_policy.CreateServicePolicyCreated, error)
 	deleteServicePolicyFunc func(params *service_policy.DeleteServicePolicyParams) (*service_policy.DeleteServicePolicyOK, error)
+	detailServicePolicyFunc func(params *service_policy.DetailServicePolicyParams) (*service_policy.DetailServicePolicyOK, error)
 	listServicePoliciesFunc func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error)
 }
 
@@ -160,6 +161,13 @@ func (f *fakeServicePolicyService) DeleteServicePolicy(params *service_policy.De
 		return nil, errors.New("delete service policy not stubbed")
 	}
 	return f.deleteServicePolicyFunc(params)
+}
+
+func (f *fakeServicePolicyService) DetailServicePolicy(params *service_policy.DetailServicePolicyParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.DetailServicePolicyOK, error) {
+	if f.detailServicePolicyFunc == nil {
+		return nil, errors.New("detail service policy not stubbed")
+	}
+	return f.detailServicePolicyFunc(params)
 }
 
 func (f *fakeServicePolicyService) ListServicePolicies(params *service_policy.ListServicePoliciesParams, _ runtime.ClientAuthInfoWriter, _ ...service_policy.ClientOption) (*service_policy.ListServicePoliciesOK, error) {
@@ -461,6 +469,42 @@ func TestGetIdentityLivenessConvertsFields(t *testing.T) {
 	}
 }
 
+func TestListServicesConvertsFilterPaginationAndResponse(t *testing.T) {
+	ctx := context.Background()
+	serviceID := "service-id"
+	serviceName := "egress-rule-1"
+	roles := rest_model.Attributes{"egress-services"}
+	fake := &fakeServiceService{
+		listServicesFunc: func(params *service.ListServicesParams) (*service.ListServicesOK, error) {
+			expected := `name = "api.github.com" and name startsWith "egress-rule-" and roleAttributes contains "egress-services"`
+			if params == nil || params.Filter == nil || *params.Filter != expected {
+				t.Fatalf("unexpected filter: %#v", params)
+			}
+			if params.Limit == nil || *params.Limit != 10 || params.Offset == nil || *params.Offset != 20 {
+				t.Fatalf("unexpected pagination: %#v", params)
+			}
+			return listServicesResponse([]*rest_model.ServiceDetail{{
+				BaseEntity:     rest_model.BaseEntity{ID: &serviceID, Tags: tagsFromMap(map[string]string{"owner": "egress"})},
+				Name:           &serviceName,
+				RoleAttributes: &roles,
+			}}, 10, 20, 31), nil
+		},
+	}
+
+	client := &Client{service: fake}
+	result, err := client.ListServices(ctx, ServiceListFilter{
+		Name:           "api.github.com",
+		NamePrefix:     "egress-rule-",
+		RoleAttributes: []string{"egress-services"},
+	}, 10, "20")
+	if err != nil {
+		t.Fatalf("list services: %v", err)
+	}
+	if result.NextPageToken != "30" || len(result.Items) != 1 || result.Items[0].ID != serviceID || result.Items[0].Name != serviceName {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
 func TestListServicesByTagConvertsRequestAndResponse(t *testing.T) {
 	ctx := context.Background()
 	serviceID := "service-id"
@@ -546,6 +590,46 @@ func TestListServicePoliciesByTagConvertsRequestAndResponse(t *testing.T) {
 		t.Fatalf("list service policies by tag: %v", err)
 	}
 	if len(result.Items) != 1 || result.Items[0].ID != policyID || result.Items[0].Type != "Dial" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestListServicePoliciesConvertsFilterPaginationAndResponse(t *testing.T) {
+	ctx := context.Background()
+	policyID := "policy-id"
+	policyName := "egress-rule-agent"
+	policyType := rest_model.DialBindDial
+	fake := &fakeServicePolicyService{
+		listServicePoliciesFunc: func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error) {
+			expected := `name = "egress-rule-agent" and name startsWith "egress-rule-" and type = "Dial" and identityRoles contains "#agent-1" and serviceRoles contains "-rule-1"`
+			if params == nil || params.Filter == nil || *params.Filter != expected {
+				t.Fatalf("unexpected filter: %#v", params)
+			}
+			if params.Limit == nil || *params.Limit != 5 || params.Offset == nil || *params.Offset != 10 {
+				t.Fatalf("unexpected pagination: %#v", params)
+			}
+			return listServicePoliciesResponse([]*rest_model.ServicePolicyDetail{{
+				BaseEntity:    rest_model.BaseEntity{ID: &policyID, Tags: tagsFromMap(map[string]string{"owner": "egress"})},
+				Name:          &policyName,
+				Type:          &policyType,
+				IdentityRoles: rest_model.Roles{"#agent-1"},
+				ServiceRoles:  rest_model.Roles{"-rule-1"},
+			}}, 5, 10, 20), nil
+		},
+	}
+
+	client := &Client{servicePolicy: fake}
+	result, err := client.ListServicePolicies(ctx, ServicePolicyListFilter{
+		Name:          "egress-rule-agent",
+		NamePrefix:    "egress-rule-",
+		Type:          "Dial",
+		IdentityRoles: []string{"#agent-1"},
+		ServiceRoles:  []string{"-rule-1"},
+	}, 5, "10")
+	if err != nil {
+		t.Fatalf("list service policies: %v", err)
+	}
+	if result.NextPageToken != "15" || len(result.Items) != 1 || result.Items[0].ID != policyID || result.Items[0].Type != "Dial" {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 }
