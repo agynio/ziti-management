@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/expose/v1/expose.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service ExposeGateway {
+  // Expose a port on an agent workload.
+  // The gateway defaults workload_id and agent_id from caller context when omitted.
+  rpc AddExposure(agynio.api.expose.v1.AddExposureRequest) returns (agynio.api.expose.v1.AddExposureResponse);
+
+  // Un-expose a port on an agent workload.
+  // The gateway defaults workload_id and agent_id from caller context when omitted.
+  rpc RemoveExposure(agynio.api.expose.v1.RemoveExposureRequest) returns (agynio.api.expose.v1.RemoveExposureResponse);
+
+  // List active exposures for an agent workload.
+  // The gateway defaults workload_id from caller context when omitted.
+  rpc ListExposures(agynio.api.expose.v1.ListExposuresRequest) returns (agynio.api.expose.v1.ListExposuresResponse);
+}

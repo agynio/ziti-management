@@ -1,0 +1,254 @@
+syntax = "proto3";
+
+package agynio.api.agent_state.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/agent_state/v1;agentstatev1";
+
+// Agent Persistent State Service (APSS)
+// - conversationId-only API (threadId/nodeId mapping handled outside)
+// - message bodies are well-typed (text and tool outputs via oneof)
+// - no external type references
+
+service AgentStateService {
+  // Append messages (batch).
+  rpc AppendConversationMessages(AppendConversationMessagesRequest) returns (AppendConversationMessagesResponse);
+
+  // List messages with filtering & pagination (conversation order: oldest to newest).
+  rpc ListConversationMessages(ListConversationMessagesRequest) returns (ListConversationMessagesResponse);
+
+  // Replace a message range with references to existing messages.
+  rpc ReplaceConversationMessagesRange(ReplaceConversationMessagesRangeRequest) returns (ReplaceConversationMessagesRangeResponse);
+
+  // Delete a contiguous range of messages by id.
+  rpc DeleteConversationMessagesRange(DeleteConversationMessagesRangeRequest) returns (DeleteConversationMessagesRangeResponse);
+
+  // Get conversation metadata (message counts and timestamps).
+  rpc GetConversation(GetConversationRequest) returns (GetConversationResponse);
+
+  // List message IDs in a conversation (filtered, paginated; oldest to newest).
+  rpc ListConversationMessageIds(ListConversationMessageIdsRequest) returns (ListConversationMessageIdsResponse);
+
+  // List messages in a snapshot (exact stored order, paginated).
+  rpc ListSnapshotMessages(ListSnapshotMessagesRequest) returns (ListSnapshotMessagesResponse);
+
+  // List message IDs in a snapshot (exact stored order, paginated).
+  rpc ListSnapshotMessageIds(ListSnapshotMessageIdsRequest) returns (ListSnapshotMessageIdsResponse);
+
+  // Create a materialized context snapshot for a specific LLM call.
+  // The client supplies the exact message IDs; APSS stores
+  // a materialized copy of each message body in the provided order.
+  // This guarantees reproducibility even after trims/edits.
+  rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotResponse);
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_USER = 1;
+  ROLE_ASSISTANT = 2;
+  ROLE_TOOL = 3;
+}
+
+// Text payload for now. Future extensions can add more oneof variants.
+message TextBody {
+  string text = 1;
+}
+
+message ToolTextOutput {
+  string text = 1;
+}
+
+enum ImageDetail {
+  IMAGE_DETAIL_UNSPECIFIED = 0;
+  IMAGE_DETAIL_AUTO = 1;
+  IMAGE_DETAIL_LOW = 2;
+  IMAGE_DETAIL_HIGH = 3;
+}
+
+message ToolImageOutput {
+  string external_url = 1;
+  string mime_type = 10;
+  ImageDetail detail = 11;
+  int32 width_px = 12;
+  int32 height_px = 13;
+  string sha256 = 14;
+}
+
+message ToolOutputBody {
+  string tool_name = 1;
+  string tool_call_id = 2;
+  oneof output {
+    ToolTextOutput text = 3;
+    ToolImageOutput image = 4;
+  }
+  map<string, string> metadata = 10; // optional
+}
+
+message MessageBody {
+  oneof body {
+    TextBody text = 1;
+    ToolOutputBody tool_output = 2;
+  }
+}
+
+// Core message entity stored by APSS.
+message Message {
+  string id = 1; // server-assigned UUID
+  string conversation_id = 2; // routing key
+  Role role = 3; // user | assistant | tool
+  string kind = 4; // free-form tag (e.g., system, summary, memory, restriction, tool_output)
+  MessageBody body = 5; // payload
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ConversationMetadata {
+  string conversation_id = 1;
+  int64 message_count = 2; // count of active messages
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+// Append
+message AppendMessageInput {
+  Role role = 1;
+  string kind = 2;
+  MessageBody body = 3;
+}
+
+message AppendConversationMessagesRequest {
+  string conversation_id = 1;
+  repeated AppendMessageInput messages = 2;
+}
+
+message AppendConversationMessagesResponse {
+  ConversationMetadata metadata = 1;
+  repeated Message appended = 2;
+}
+
+// List (results returned in conversation order: oldest to newest)
+message ListConversationMessagesRequest {
+  string conversation_id = 1;
+  repeated Role roles = 2; // filter roles (optional)
+  repeated string kinds = 3; // filter kinds (optional)
+  int32 page_size = 4; // server may cap
+  string page_token = 5; // opaque cursor
+}
+
+message ListConversationMessagesResponse {
+  ConversationMetadata metadata = 1;
+  repeated Message messages = 2;
+  string next_page_token = 3;
+}
+
+// Replace
+message ReplaceConversationMessagesRangeRequest {
+  // Semantics:
+  // - from_message_id and to_message_id set: replace inclusive range [from..to] with new_message_ids.
+  // - only from_message_id set: insert new_message_ids immediately after from_message_id (no deletions).
+  // - only to_message_id set: insert new_message_ids immediately before to_message_id (no deletions).
+  // - neither set: invalid; clients must use AppendConversationMessages.
+  string conversation_id = 1;
+  string from_message_id = 2;
+  string to_message_id = 3;
+  repeated string new_message_ids = 4;
+}
+
+message ReplaceConversationMessagesRangeResponse {
+  ConversationMetadata metadata = 1;
+  repeated string replaced_message_ids = 2;
+  repeated string inserted_message_ids = 3;
+}
+
+// Delete range
+message DeleteConversationMessagesRangeRequest {
+  // Semantics:
+  // - from_message_id and to_message_id set: delete inclusive range [from..to].
+  // - only from_message_id set: delete from from_message_id through tail.
+  // - only to_message_id set: delete from head through to_message_id.
+  // - neither set: invalid.
+  string conversation_id = 1;
+  string from_message_id = 2;
+  string to_message_id = 3;
+}
+
+message DeleteConversationMessagesRangeResponse {
+  ConversationMetadata metadata = 1;
+  repeated string deleted_message_ids = 2;
+}
+
+// Metadata
+message GetConversationRequest {
+  string conversation_id = 1;
+}
+message GetConversationResponse {
+  ConversationMetadata metadata = 1;
+}
+
+// Create a materialized context snapshot for a specific LLM call.
+// The client supplies the exact message IDs; APSS stores
+// a materialized copy of each message body in the provided order.
+// This guarantees reproducibility even after trims/edits.
+
+// --------------------------
+// Context Snapshots
+// --------------------------
+
+// A materialized snapshot of the exact context sent to an LLM call.
+message ContextSnapshot {
+  string snapshot_id = 1; // server-assigned UUID
+  string conversation_id = 2; // conversation this snapshot belongs to
+  google.protobuf.Timestamp created_at = 4;
+}
+
+// Each snapshot item is a materialized message copy with integrity hash.
+message SnapshotItem {
+  string message_id = 1; // original message id
+  Role role = 2; // original role
+  string kind = 3; // original kind
+  MessageBody body = 4; // materialized body copy
+  string body_sha256 = 5; // integrity hash of the serialized body
+}
+
+message CreateSnapshotRequest {
+  string conversation_id = 1;
+  repeated string message_ids = 2; // exact order to persist in the snapshot
+}
+
+message CreateSnapshotResponse {
+  ContextSnapshot snapshot = 1;
+}
+
+// Snapshot listing RPCs
+message ListSnapshotMessagesRequest {
+  string snapshot_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListSnapshotMessagesResponse {
+  repeated Message messages = 1;
+  string next_page_token = 2;
+}
+
+message ListSnapshotMessageIdsRequest {
+  string snapshot_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListSnapshotMessageIdsResponse {
+  repeated string message_ids = 1;
+  string next_page_token = 2;
+}
+
+// List conversation message IDs (results returned in conversation order: oldest to newest)
+message ListConversationMessageIdsRequest {
+  string conversation_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListConversationMessageIdsResponse {
+  repeated string message_ids = 1;
+  string next_page_token = 2;
+}

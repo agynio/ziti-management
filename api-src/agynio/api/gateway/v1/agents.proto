@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/agents/v1/agents.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service AgentsGateway {
+  // --- Agents ---
+  rpc CreateAgent(agynio.api.agents.v1.CreateAgentRequest) returns (agynio.api.agents.v1.CreateAgentResponse);
+  rpc GetAgent(agynio.api.agents.v1.GetAgentRequest) returns (agynio.api.agents.v1.GetAgentResponse);
+  rpc UpdateAgent(agynio.api.agents.v1.UpdateAgentRequest) returns (agynio.api.agents.v1.UpdateAgentResponse);
+  rpc DeleteAgent(agynio.api.agents.v1.DeleteAgentRequest) returns (agynio.api.agents.v1.DeleteAgentResponse);
+  rpc ListAgents(agynio.api.agents.v1.ListAgentsRequest) returns (agynio.api.agents.v1.ListAgentsResponse);
+  rpc SetAgentRole(agynio.api.agents.v1.SetAgentRoleRequest) returns (agynio.api.agents.v1.SetAgentRoleResponse);
+  rpc RemoveAgentRole(agynio.api.agents.v1.RemoveAgentRoleRequest) returns (agynio.api.agents.v1.RemoveAgentRoleResponse);
+  rpc ListAgentRoles(agynio.api.agents.v1.ListAgentRolesRequest) returns (agynio.api.agents.v1.ListAgentRolesResponse);
+  rpc ListMyAgentRoles(agynio.api.agents.v1.ListMyAgentRolesRequest) returns (agynio.api.agents.v1.ListMyAgentRolesResponse);
+
+  // --- Volumes ---
+  rpc CreateVolume(agynio.api.agents.v1.CreateVolumeRequest) returns (agynio.api.agents.v1.CreateVolumeResponse);
+  rpc GetVolume(agynio.api.agents.v1.GetVolumeRequest) returns (agynio.api.agents.v1.GetVolumeResponse);
+  rpc UpdateVolume(agynio.api.agents.v1.UpdateVolumeRequest) returns (agynio.api.agents.v1.UpdateVolumeResponse);
+  rpc DeleteVolume(agynio.api.agents.v1.DeleteVolumeRequest) returns (agynio.api.agents.v1.DeleteVolumeResponse);
+  rpc ListVolumes(agynio.api.agents.v1.ListVolumesRequest) returns (agynio.api.agents.v1.ListVolumesResponse);
+
+  // --- Volume Attachments (no Update) ---
+  rpc CreateVolumeAttachment(agynio.api.agents.v1.CreateVolumeAttachmentRequest) returns (agynio.api.agents.v1.CreateVolumeAttachmentResponse);
+  rpc GetVolumeAttachment(agynio.api.agents.v1.GetVolumeAttachmentRequest) returns (agynio.api.agents.v1.GetVolumeAttachmentResponse);
+  rpc DeleteVolumeAttachment(agynio.api.agents.v1.DeleteVolumeAttachmentRequest) returns (agynio.api.agents.v1.DeleteVolumeAttachmentResponse);
+  rpc ListVolumeAttachments(agynio.api.agents.v1.ListVolumeAttachmentsRequest) returns (agynio.api.agents.v1.ListVolumeAttachmentsResponse);
+
+  // --- MCPs ---
+  rpc CreateMcp(agynio.api.agents.v1.CreateMcpRequest) returns (agynio.api.agents.v1.CreateMcpResponse);
+  rpc GetMcp(agynio.api.agents.v1.GetMcpRequest) returns (agynio.api.agents.v1.GetMcpResponse);
+  rpc UpdateMcp(agynio.api.agents.v1.UpdateMcpRequest) returns (agynio.api.agents.v1.UpdateMcpResponse);
+  rpc DeleteMcp(agynio.api.agents.v1.DeleteMcpRequest) returns (agynio.api.agents.v1.DeleteMcpResponse);
+  rpc ListMcps(agynio.api.agents.v1.ListMcpsRequest) returns (agynio.api.agents.v1.ListMcpsResponse);
+
+  // --- Skills ---
+  rpc CreateSkill(agynio.api.agents.v1.CreateSkillRequest) returns (agynio.api.agents.v1.CreateSkillResponse);
+  rpc GetSkill(agynio.api.agents.v1.GetSkillRequest) returns (agynio.api.agents.v1.GetSkillResponse);
+  rpc UpdateSkill(agynio.api.agents.v1.UpdateSkillRequest) returns (agynio.api.agents.v1.UpdateSkillResponse);
+  rpc DeleteSkill(agynio.api.agents.v1.DeleteSkillRequest) returns (agynio.api.agents.v1.DeleteSkillResponse);
+  rpc ListSkills(agynio.api.agents.v1.ListSkillsRequest) returns (agynio.api.agents.v1.ListSkillsResponse);
+
+  // --- Hooks ---
+  rpc CreateHook(agynio.api.agents.v1.CreateHookRequest) returns (agynio.api.agents.v1.CreateHookResponse);
+  rpc GetHook(agynio.api.agents.v1.GetHookRequest) returns (agynio.api.agents.v1.GetHookResponse);
+  rpc UpdateHook(agynio.api.agents.v1.UpdateHookRequest) returns (agynio.api.agents.v1.UpdateHookResponse);
+  rpc DeleteHook(agynio.api.agents.v1.DeleteHookRequest) returns (agynio.api.agents.v1.DeleteHookResponse);
+  rpc ListHooks(agynio.api.agents.v1.ListHooksRequest) returns (agynio.api.agents.v1.ListHooksResponse);
+
+  // --- Envs ---
+  rpc CreateEnv(agynio.api.agents.v1.CreateEnvRequest) returns (agynio.api.agents.v1.CreateEnvResponse);
+  rpc GetEnv(agynio.api.agents.v1.GetEnvRequest) returns (agynio.api.agents.v1.GetEnvResponse);
+  rpc UpdateEnv(agynio.api.agents.v1.UpdateEnvRequest) returns (agynio.api.agents.v1.UpdateEnvResponse);
+  rpc DeleteEnv(agynio.api.agents.v1.DeleteEnvRequest) returns (agynio.api.agents.v1.DeleteEnvResponse);
+  rpc ListEnvs(agynio.api.agents.v1.ListEnvsRequest) returns (agynio.api.agents.v1.ListEnvsResponse);
+
+  // --- Init Scripts ---
+  rpc CreateInitScript(agynio.api.agents.v1.CreateInitScriptRequest) returns (agynio.api.agents.v1.CreateInitScriptResponse);
+  rpc GetInitScript(agynio.api.agents.v1.GetInitScriptRequest) returns (agynio.api.agents.v1.GetInitScriptResponse);
+  rpc UpdateInitScript(agynio.api.agents.v1.UpdateInitScriptRequest) returns (agynio.api.agents.v1.UpdateInitScriptResponse);
+  rpc DeleteInitScript(agynio.api.agents.v1.DeleteInitScriptRequest) returns (agynio.api.agents.v1.DeleteInitScriptResponse);
+  rpc ListInitScripts(agynio.api.agents.v1.ListInitScriptsRequest) returns (agynio.api.agents.v1.ListInitScriptsResponse);
+
+  // --- Image Pull Secret Attachments (no Update - immutable) ---
+  rpc CreateImagePullSecretAttachment(agynio.api.agents.v1.CreateImagePullSecretAttachmentRequest) returns (agynio.api.agents.v1.CreateImagePullSecretAttachmentResponse);
+  rpc GetImagePullSecretAttachment(agynio.api.agents.v1.GetImagePullSecretAttachmentRequest) returns (agynio.api.agents.v1.GetImagePullSecretAttachmentResponse);
+  rpc DeleteImagePullSecretAttachment(agynio.api.agents.v1.DeleteImagePullSecretAttachmentRequest) returns (agynio.api.agents.v1.DeleteImagePullSecretAttachmentResponse);
+  rpc ListImagePullSecretAttachments(agynio.api.agents.v1.ListImagePullSecretAttachmentsRequest) returns (agynio.api.agents.v1.ListImagePullSecretAttachmentsResponse);
+}

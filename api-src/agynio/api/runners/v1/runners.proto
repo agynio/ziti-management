@@ -1,0 +1,522 @@
+syntax = "proto3";
+
+package agynio.api.runners.v1;
+
+import "agynio/api/runner/v1/runner.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/runners/v1;runnersv1";
+
+// RunnersService manages runners and their workload state.
+service RunnersService {
+  // --- Runner management ---
+  rpc RegisterRunner(RegisterRunnerRequest) returns (RegisterRunnerResponse);
+  rpc GetRunner(GetRunnerRequest) returns (GetRunnerResponse);
+  rpc ListRunners(ListRunnersRequest) returns (ListRunnersResponse);
+  rpc UpdateRunner(UpdateRunnerRequest) returns (UpdateRunnerResponse);
+  rpc DeleteRunner(DeleteRunnerRequest) returns (DeleteRunnerResponse);
+  rpc ValidateServiceToken(ValidateServiceTokenRequest) returns (ValidateServiceTokenResponse);
+  rpc EnrollRunner(EnrollRunnerRequest) returns (EnrollRunnerResponse);
+
+  // --- Workload state ---
+  rpc CreateWorkload(CreateWorkloadRequest) returns (CreateWorkloadResponse);
+  rpc UpdateWorkload(UpdateWorkloadRequest) returns (UpdateWorkloadResponse);
+  rpc UpdateWorkloadStatus(UpdateWorkloadStatusRequest) returns (UpdateWorkloadStatusResponse);
+  rpc TouchWorkload(TouchWorkloadRequest) returns (TouchWorkloadResponse);
+  rpc DeleteWorkload(DeleteWorkloadRequest) returns (DeleteWorkloadResponse);
+  rpc GetWorkload(GetWorkloadRequest) returns (GetWorkloadResponse);
+  rpc ListWorkloadsByThread(ListWorkloadsByThreadRequest) returns (ListWorkloadsByThreadResponse);
+  rpc ListWorkloads(ListWorkloadsRequest) returns (ListWorkloadsResponse);
+  rpc BatchUpdateWorkloadSampledAt(BatchUpdateWorkloadSampledAtRequest) returns (BatchUpdateWorkloadSampledAtResponse);
+
+  // --- Workload logs ---
+  rpc StreamWorkloadLogs(agynio.api.runner.v1.StreamWorkloadLogsRequest) returns (stream agynio.api.runner.v1.StreamWorkloadLogsResponse);
+
+  // --- Volume state ---
+  rpc CreateVolume(CreateVolumeRequest) returns (CreateVolumeResponse);
+  rpc UpdateVolume(UpdateVolumeRequest) returns (UpdateVolumeResponse);
+  rpc GetVolume(GetVolumeRequest) returns (GetVolumeResponse);
+  rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse);
+  rpc ListVolumesByThread(ListVolumesByThreadRequest) returns (ListVolumesByThreadResponse);
+  rpc BatchUpdateVolumeSampledAt(BatchUpdateVolumeSampledAtRequest) returns (BatchUpdateVolumeSampledAtResponse);
+}
+
+// ===========================================================================
+// Common
+// ===========================================================================
+
+message EntityMeta {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message SampledAtEntry {
+  string id = 1;
+  google.protobuf.Timestamp sampled_at = 2;
+}
+
+enum SortDirection {
+  SORT_DIRECTION_UNSPECIFIED = 0;
+  SORT_DIRECTION_ASC = 1;
+  SORT_DIRECTION_DESC = 2;
+}
+
+// ===========================================================================
+// Runner
+// ===========================================================================
+
+enum RunnerStatus {
+  RUNNER_STATUS_UNSPECIFIED = 0;
+  RUNNER_STATUS_PENDING = 1;
+  RUNNER_STATUS_ENROLLED = 2;
+  RUNNER_STATUS_OFFLINE = 3;
+}
+
+message Runner {
+  EntityMeta meta = 1;
+  string name = 2;
+  optional string organization_id = 3;
+  string identity_id = 4;
+  RunnerStatus status = 5;
+  map<string, string> labels = 6;
+  // Per-runner OpenZiti service name (e.g. "runner-{id}")
+  string openziti_service_name = 7;
+  // Capabilities supported by this runner. Free-form strings (e.g., "privileged", "dind").
+  repeated string capabilities = 8;
+}
+
+message RegisterRunnerRequest {
+  string name = 1;
+  optional string organization_id = 2;
+  map<string, string> labels = 3;
+  // Capabilities supported by this runner. Free-form strings (e.g., "privileged", "dind").
+  repeated string capabilities = 4;
+}
+
+message RegisterRunnerResponse {
+  Runner runner = 1;
+  string service_token = 2;
+}
+
+message GetRunnerRequest {
+  string id = 1;
+}
+
+message GetRunnerResponse {
+  Runner runner = 1;
+}
+
+message ListRunnersRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  optional string organization_id = 3;
+}
+
+message ListRunnersResponse {
+  repeated Runner runners = 1;
+  string next_page_token = 2;
+}
+
+message UpdateRunnerRequest {
+  string id = 1;
+  optional string name = 2;
+  // Labels replace the existing map; omitted keys are removed.
+  map<string, string> labels = 3;
+  // Capabilities replace the existing list; an empty list clears all capabilities.
+  repeated string capabilities = 4;
+}
+
+message UpdateRunnerResponse {
+  Runner runner = 1;
+}
+
+message DeleteRunnerRequest {
+  string id = 1;
+}
+
+message DeleteRunnerResponse {}
+
+message ValidateServiceTokenRequest {
+  string token_hash = 1;
+}
+
+message ValidateServiceTokenResponse {
+  Runner runner = 1;
+}
+
+message EnrollRunnerRequest {
+  string service_token = 1;
+}
+
+message EnrollRunnerResponse {
+  bytes identity_json = 1;
+  string service_name = 2;
+  string identity_id = 3;
+}
+
+// ===========================================================================
+// Workload
+// ===========================================================================
+
+enum WorkloadStatus {
+  WORKLOAD_STATUS_UNSPECIFIED = 0;
+  WORKLOAD_STATUS_STARTING = 1;
+  // Container is up and healthy. This does not imply the agent is actively
+  // processing; see Workload.agent_state.
+  WORKLOAD_STATUS_RUNNING = 2;
+  WORKLOAD_STATUS_STOPPING = 3;
+  WORKLOAD_STATUS_STOPPED = 4;
+  WORKLOAD_STATUS_FAILED = 5;
+}
+
+enum WorkloadAgentState {
+  WORKLOAD_AGENT_STATE_UNSPECIFIED = 0;
+  WORKLOAD_AGENT_STATE_PROCESSING = 1;
+  WORKLOAD_AGENT_STATE_IDLE = 2;
+}
+
+enum WorkloadFailureReason {
+  WORKLOAD_FAILURE_REASON_UNSPECIFIED = 0;
+  WORKLOAD_FAILURE_REASON_START_FAILED = 1;
+  WORKLOAD_FAILURE_REASON_IMAGE_PULL_FAILED = 2;
+  WORKLOAD_FAILURE_REASON_CONFIG_INVALID = 3;
+  WORKLOAD_FAILURE_REASON_CRASHLOOP = 4;
+  WORKLOAD_FAILURE_REASON_RUNTIME_LOST = 5;
+}
+
+enum ContainerRole {
+  CONTAINER_ROLE_UNSPECIFIED = 0;
+  CONTAINER_ROLE_MAIN = 1;
+  CONTAINER_ROLE_SIDECAR = 2;
+  CONTAINER_ROLE_INIT = 3;
+}
+
+enum ContainerStatus {
+  CONTAINER_STATUS_UNSPECIFIED = 0;
+  CONTAINER_STATUS_RUNNING = 1;
+  CONTAINER_STATUS_TERMINATED = 2;
+  CONTAINER_STATUS_WAITING = 3;
+}
+
+message Container {
+  // Runtime-assigned identifier from the container runtime (audit only).
+  string container_id = 1;
+  // Stable name unique within the workload, matches the Pod container name.
+  string name = 2;
+  ContainerRole role = 3;
+  string image = 4;
+  ContainerStatus status = 5;
+  optional string reason = 6;
+  optional string message = 7;
+  optional int32 exit_code = 8;
+  int32 restart_count = 9;
+  optional google.protobuf.Timestamp started_at = 10;
+  optional google.protobuf.Timestamp finished_at = 11;
+}
+
+message Workload {
+  EntityMeta meta = 1;
+  string runner_id = 2;
+  string thread_id = 3;
+  string agent_id = 4;
+  string organization_id = 5;
+  WorkloadStatus status = 6;
+  repeated Container containers = 7;
+  string ziti_identity_id = 8;
+  optional string instance_id = 9;
+  google.protobuf.Timestamp last_activity_at = 10;
+  optional google.protobuf.Timestamp last_metering_sampled_at = 11;
+  optional google.protobuf.Timestamp removed_at = 12;
+  int32 allocated_cpu_millicores = 13;
+  int64 allocated_ram_bytes = 14;
+  // Machine-readable reason for failures when status is WORKLOAD_STATUS_FAILED.
+  // When status is not FAILED, this value may be unset or stale.
+  optional WorkloadFailureReason failure_reason = 15;
+  // Human-readable failure detail for failed workloads; not intended for
+  // programmatic parsing. When status is not FAILED, this value may be unset
+  // or stale.
+  optional string failure_message = 16;
+  // Denormalized display name for agent_id.
+  string agent_name = 17;
+  // Denormalized display name for runner_id.
+  string runner_name = 18;
+  WorkloadAgentState agent_state = 19;
+}
+
+message CreateWorkloadRequest {
+  string id = 1;
+  string runner_id = 2;
+  string thread_id = 3;
+  string agent_id = 4;
+  string organization_id = 5;
+  WorkloadStatus status = 6;
+  repeated Container containers = 7;
+  string ziti_identity_id = 8;
+  int32 allocated_cpu_millicores = 9;
+  int64 allocated_ram_bytes = 10;
+}
+
+message CreateWorkloadResponse {
+  Workload workload = 1;
+}
+
+message UpdateWorkloadRequest {
+  string id = 1;
+  optional WorkloadStatus status = 2;
+  repeated Container containers = 3;
+  optional string instance_id = 4;
+  optional google.protobuf.Timestamp removed_at = 5;
+  optional google.protobuf.Timestamp last_metering_sampled_at = 6;
+  // Use this RPC to set or update failure details.
+  optional WorkloadFailureReason failure_reason = 7;
+  // Human-readable failure detail; not intended for programmatic parsing.
+  optional string failure_message = 8;
+}
+
+message UpdateWorkloadResponse {
+  Workload workload = 1;
+}
+
+// Updates status and containers only. Use UpdateWorkload to set failure
+// details such as failure_reason and failure_message.
+message UpdateWorkloadStatusRequest {
+  string id = 1;
+  WorkloadStatus status = 2;
+  repeated Container containers = 3;
+}
+
+message UpdateWorkloadStatusResponse {
+  Workload workload = 1;
+}
+
+message TouchWorkloadRequest {
+  string id = 1;
+}
+
+message TouchWorkloadResponse {}
+
+message DeleteWorkloadRequest {
+  string id = 1;
+}
+
+message DeleteWorkloadResponse {}
+
+message GetWorkloadRequest {
+  string id = 1;
+}
+
+message GetWorkloadResponse {
+  Workload workload = 1;
+}
+
+enum ListWorkloadsSortField {
+  LIST_WORKLOADS_SORT_FIELD_UNSPECIFIED = 0;
+  LIST_WORKLOADS_SORT_FIELD_STARTED = 1;
+  LIST_WORKLOADS_SORT_FIELD_AGENT = 2;
+  LIST_WORKLOADS_SORT_FIELD_RUNNER = 3;
+  LIST_WORKLOADS_SORT_FIELD_STATUS = 4;
+  LIST_WORKLOADS_SORT_FIELD_DURATION = 5;
+}
+
+message ListWorkloadsSort {
+  ListWorkloadsSortField field = 1;
+  SortDirection direction = 2;
+}
+
+message ListWorkloadsFilter {
+  repeated string agent_id_in = 1;
+  repeated string runner_id_in = 2;
+  repeated WorkloadStatus status_in = 3;
+  optional google.protobuf.Timestamp started_after = 4;
+  optional google.protobuf.Timestamp started_before = 5;
+  optional bool pending_sample = 6;
+}
+
+message ListWorkloadsByThreadRequest {
+  string thread_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+  optional string agent_id = 4;
+  // Optional status filter. An empty list returns workloads for all statuses.
+  repeated WorkloadStatus statuses = 5;
+}
+
+message ListWorkloadsByThreadResponse {
+  // Ordered by created_at DESC, id DESC for stable pagination.
+  repeated Workload workloads = 1;
+  string next_page_token = 2;
+}
+
+message ListWorkloadsRequest {
+  int32 page_size = 1;
+  // Opaque cursor; reuse only with the same sort and filter.
+  string page_token = 2;
+  // Deprecated: use filter.status_in instead.
+  repeated WorkloadStatus statuses = 3 [deprecated = true];
+  // Required organization scope; caller must hold can_view_workloads.
+  optional string organization_id = 4;
+  // Deprecated: use filter.runner_id_in instead.
+  optional string runner_id = 5 [deprecated = true];
+  // Deprecated: use filter.pending_sample instead.
+  optional bool pending_sample = 6 [deprecated = true];
+  ListWorkloadsFilter filter = 7;
+  ListWorkloadsSort sort = 8;
+}
+
+message ListWorkloadsResponse {
+  repeated Workload workloads = 1;
+  string next_page_token = 2;
+}
+
+message BatchUpdateWorkloadSampledAtRequest {
+  repeated SampledAtEntry entries = 1;
+}
+
+message BatchUpdateWorkloadSampledAtResponse {}
+
+// ===========================================================================
+// Volume
+// ===========================================================================
+
+enum VolumeStatus {
+  VOLUME_STATUS_UNSPECIFIED = 0;
+  VOLUME_STATUS_PROVISIONING = 1;
+  VOLUME_STATUS_ACTIVE = 2;
+  VOLUME_STATUS_DEPROVISIONING = 3;
+  VOLUME_STATUS_DELETED = 4;
+  VOLUME_STATUS_FAILED = 5;
+}
+
+message Volume {
+  EntityMeta meta = 1;
+  optional string instance_id = 2;
+  string volume_id = 3;
+  string thread_id = 4;
+  string runner_id = 5;
+  string agent_id = 6;
+  string organization_id = 7;
+  string size_gb = 8;
+  VolumeStatus status = 9;
+  optional google.protobuf.Timestamp removed_at = 10;
+  optional google.protobuf.Timestamp last_metering_sampled_at = 11;
+  // Denormalized display name for volume_id.
+  string volume_name = 12;
+  // Current attachments for this volume; empty when unattached.
+  repeated Attachment attachments = 13;
+}
+
+enum AttachmentKind {
+  ATTACHMENT_KIND_UNSPECIFIED = 0;
+  ATTACHMENT_KIND_AGENT = 1;
+  ATTACHMENT_KIND_MCP = 2;
+  ATTACHMENT_KIND_HOOK = 3;
+}
+
+message Attachment {
+  AttachmentKind kind = 1;
+  string id = 2;
+  string name = 3;
+}
+
+enum VolumeAttachmentFilterKind {
+  VOLUME_ATTACHMENT_FILTER_KIND_UNSPECIFIED = 0;
+  VOLUME_ATTACHMENT_FILTER_KIND_AGENT = 1;
+  VOLUME_ATTACHMENT_FILTER_KIND_MCP = 2;
+  VOLUME_ATTACHMENT_FILTER_KIND_HOOK = 3;
+  VOLUME_ATTACHMENT_FILTER_KIND_UNATTACHED = 4;
+}
+
+message CreateVolumeRequest {
+  string id = 1;
+  string volume_id = 2;
+  string thread_id = 3;
+  string runner_id = 4;
+  string agent_id = 5;
+  string organization_id = 6;
+  string size_gb = 7;
+  VolumeStatus status = 8;
+}
+
+message CreateVolumeResponse {
+  Volume volume = 1;
+}
+
+message UpdateVolumeRequest {
+  string id = 1;
+  optional VolumeStatus status = 2;
+  optional string instance_id = 3;
+  optional google.protobuf.Timestamp removed_at = 4;
+  optional google.protobuf.Timestamp last_metering_sampled_at = 5;
+}
+
+message UpdateVolumeResponse {
+  Volume volume = 1;
+}
+
+message GetVolumeRequest {
+  string id = 1;
+}
+
+message GetVolumeResponse {
+  Volume volume = 1;
+}
+
+enum ListVolumesSortField {
+  LIST_VOLUMES_SORT_FIELD_UNSPECIFIED = 0;
+  LIST_VOLUMES_SORT_FIELD_NAME = 1;
+  LIST_VOLUMES_SORT_FIELD_SIZE = 2;
+  LIST_VOLUMES_SORT_FIELD_STATUS = 3;
+  LIST_VOLUMES_SORT_FIELD_CREATED = 4;
+}
+
+message ListVolumesSort {
+  ListVolumesSortField field = 1;
+  SortDirection direction = 2;
+}
+
+message ListVolumesFilter {
+  repeated VolumeStatus status_in = 1;
+  repeated string runner_id_in = 2;
+  repeated VolumeAttachmentFilterKind attached_to_kind_in = 3;
+  optional bool pending_sample = 4;
+  optional string volume_name_substring = 5;
+}
+
+message ListVolumesRequest {
+  int32 page_size = 1;
+  // Opaque cursor; reuse only with the same sort and filter.
+  string page_token = 2;
+  // Deprecated: use filter.status_in instead.
+  repeated VolumeStatus statuses = 3 [deprecated = true];
+  // Required organization scope; caller must hold can_view_volumes.
+  optional string organization_id = 4;
+  // Deprecated: use filter.runner_id_in instead.
+  optional string runner_id = 5 [deprecated = true];
+  // Deprecated: use filter.pending_sample instead.
+  optional bool pending_sample = 6 [deprecated = true];
+  ListVolumesFilter filter = 7;
+  ListVolumesSort sort = 8;
+}
+
+message ListVolumesResponse {
+  repeated Volume volumes = 1;
+  string next_page_token = 2;
+}
+
+message ListVolumesByThreadRequest {
+  string thread_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListVolumesByThreadResponse {
+  repeated Volume volumes = 1;
+  string next_page_token = 2;
+}
+
+message BatchUpdateVolumeSampledAtRequest {
+  repeated SampledAtEntry entries = 1;
+}
+
+message BatchUpdateVolumeSampledAtResponse {}

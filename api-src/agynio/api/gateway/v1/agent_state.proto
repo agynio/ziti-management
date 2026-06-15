@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/agent_state/v1/agent_state.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service AgentStateGateway {
+  rpc AppendConversationMessages(agynio.api.agent_state.v1.AppendConversationMessagesRequest) returns (agynio.api.agent_state.v1.AppendConversationMessagesResponse);
+  rpc ListConversationMessages(agynio.api.agent_state.v1.ListConversationMessagesRequest) returns (agynio.api.agent_state.v1.ListConversationMessagesResponse);
+  rpc ReplaceConversationMessagesRange(agynio.api.agent_state.v1.ReplaceConversationMessagesRangeRequest) returns (agynio.api.agent_state.v1.ReplaceConversationMessagesRangeResponse);
+  rpc DeleteConversationMessagesRange(agynio.api.agent_state.v1.DeleteConversationMessagesRangeRequest) returns (agynio.api.agent_state.v1.DeleteConversationMessagesRangeResponse);
+  rpc GetConversation(agynio.api.agent_state.v1.GetConversationRequest) returns (agynio.api.agent_state.v1.GetConversationResponse);
+  rpc ListConversationMessageIds(agynio.api.agent_state.v1.ListConversationMessageIdsRequest) returns (agynio.api.agent_state.v1.ListConversationMessageIdsResponse);
+  rpc ListSnapshotMessages(agynio.api.agent_state.v1.ListSnapshotMessagesRequest) returns (agynio.api.agent_state.v1.ListSnapshotMessagesResponse);
+  rpc ListSnapshotMessageIds(agynio.api.agent_state.v1.ListSnapshotMessageIdsRequest) returns (agynio.api.agent_state.v1.ListSnapshotMessageIdsResponse);
+  rpc CreateSnapshot(agynio.api.agent_state.v1.CreateSnapshotRequest) returns (agynio.api.agent_state.v1.CreateSnapshotResponse);
+}

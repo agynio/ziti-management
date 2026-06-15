@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package agynio.api.expose.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/expose/v1;exposev1";
+
+// ExposeService manages the lifecycle of port exposures — making ports inside
+// agent containers accessible over the OpenZiti network.
+service ExposeService {
+  // Expose a port on an agent workload. Creates OpenZiti resources and returns
+  // the exposure record (including the access URL).
+  rpc AddExposure(AddExposureRequest) returns (AddExposureResponse);
+
+  // Un-expose a port on an agent workload. Deletes the OpenZiti resources and
+  // the exposure record.
+  rpc RemoveExposure(RemoveExposureRequest) returns (RemoveExposureResponse);
+
+  // List active exposures for an agent workload.
+  rpc ListExposures(ListExposuresRequest) returns (ListExposuresResponse);
+}
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+enum ExposureStatus {
+  EXPOSURE_STATUS_UNSPECIFIED = 0;
+  EXPOSURE_STATUS_PROVISIONING = 1;
+  EXPOSURE_STATUS_ACTIVE = 2;
+  EXPOSURE_STATUS_FAILED = 3;
+  EXPOSURE_STATUS_REMOVING = 4;
+}
+
+// ===========================================================================
+// Common
+// ===========================================================================
+
+message EntityMeta {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+// ===========================================================================
+// Exposure
+// ===========================================================================
+
+message Exposure {
+  EntityMeta meta = 1;
+  string workload_id = 2;
+  string agent_id = 3;
+  int32 port = 4;
+  string openziti_service_id = 5;
+  string openziti_bind_policy_id = 6;
+  string openziti_dial_policy_id = 7;
+  string url = 8;
+  ExposureStatus status = 9;
+}
+
+// ===========================================================================
+// AddExposure
+// ===========================================================================
+
+message AddExposureRequest {
+  string workload_id = 1;
+  int32 port = 2;
+  string agent_id = 3;
+}
+
+message AddExposureResponse {
+  Exposure exposure = 1;
+}
+
+// ===========================================================================
+// RemoveExposure
+// ===========================================================================
+
+message RemoveExposureRequest {
+  string workload_id = 1;
+  int32 port = 2;
+}
+
+message RemoveExposureResponse {}
+
+// ===========================================================================
+// ListExposures
+// ===========================================================================
+
+message ListExposuresRequest {
+  string workload_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListExposuresResponse {
+  repeated Exposure exposures = 1;
+  string next_page_token = 2;
+}

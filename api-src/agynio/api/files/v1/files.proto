@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package agynio.api.files.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/files/v1;filesv1";
+
+service FilesService {
+  rpc UploadFile(stream UploadFileRequest) returns (UploadFileResponse);
+  rpc GetFileMetadata(GetFileMetadataRequest) returns (GetFileMetadataResponse);
+  rpc GetDownloadUrl(GetDownloadUrlRequest) returns (GetDownloadUrlResponse);
+  rpc GetFileContent(GetFileContentRequest) returns (stream GetFileContentResponse);
+}
+
+// -------------------- UploadFile --------------------
+
+message UploadFileRequest {
+  oneof payload {
+    UploadFileMetadata metadata = 1;
+    UploadFileChunk chunk = 2;
+  }
+}
+
+message UploadFileMetadata {
+  string filename = 1;
+  string content_type = 2;
+  int64 size_bytes = 3;
+}
+
+message UploadFileChunk {
+  bytes data = 1;
+}
+
+message UploadFileResponse {
+  FileInfo file = 1;
+}
+
+// -------------------- GetFileMetadata --------------------
+
+message GetFileMetadataRequest {
+  string file_id = 1;
+}
+
+message GetFileMetadataResponse {
+  FileInfo file = 1;
+}
+
+// -------------------- GetDownloadUrl --------------------
+
+message GetDownloadUrlRequest {
+  string file_id = 1;
+  google.protobuf.Duration expiry = 2;
+}
+
+message GetDownloadUrlResponse {
+  string url = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// -------------------- GetFileContent --------------------
+
+message GetFileContentRequest {
+  string file_id = 1;
+}
+
+message GetFileContentResponse {
+  bytes chunk_data = 1;
+}
+
+// -------------------- Common --------------------
+
+message FileInfo {
+  string id = 1;
+  string filename = 2;
+  string content_type = 3;
+  int64 size_bytes = 4;
+  google.protobuf.Timestamp created_at = 5;
+}

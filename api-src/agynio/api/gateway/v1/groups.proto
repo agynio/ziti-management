@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/groups/v1/groups.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service GroupsGateway {
+  // --- Groups ---
+  rpc CreateGroup(agynio.api.groups.v1.CreateGroupRequest) returns (agynio.api.groups.v1.CreateGroupResponse);
+  rpc GetGroup(agynio.api.groups.v1.GetGroupRequest) returns (agynio.api.groups.v1.GetGroupResponse);
+  rpc ListGroups(agynio.api.groups.v1.ListGroupsRequest) returns (agynio.api.groups.v1.ListGroupsResponse);
+  rpc UpdateGroup(agynio.api.groups.v1.UpdateGroupRequest) returns (agynio.api.groups.v1.UpdateGroupResponse);
+  rpc DeleteGroup(agynio.api.groups.v1.DeleteGroupRequest) returns (agynio.api.groups.v1.DeleteGroupResponse);
+
+  // --- Memberships ---
+  rpc AddMember(agynio.api.groups.v1.AddMemberRequest) returns (agynio.api.groups.v1.AddMemberResponse);
+  rpc RemoveMember(agynio.api.groups.v1.RemoveMemberRequest) returns (agynio.api.groups.v1.RemoveMemberResponse);
+  rpc ListMembers(agynio.api.groups.v1.ListMembersRequest) returns (agynio.api.groups.v1.ListMembersResponse);
+  rpc ListMemberGroups(agynio.api.groups.v1.ListMemberGroupsRequest) returns (agynio.api.groups.v1.ListMemberGroupsResponse);
+}

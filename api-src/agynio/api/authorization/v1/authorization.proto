@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package agynio.api.authorization.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/authorization/v1;authorizationv1";
+
+// AuthorizationService is a thin gRPC proxy to OpenFGA.
+// It mirrors the OpenFGA runtime API and injects store/model IDs.
+service AuthorizationService {
+  // Check tests whether a user has a specific relationship with an object.
+  rpc Check(CheckRequest) returns (CheckResponse);
+  // BatchCheck evaluates multiple authorization checks in a single call.
+  // Each check includes a correlation_id for matching results.
+  rpc BatchCheck(BatchCheckRequest) returns (BatchCheckResponse);
+  // Write creates or deletes relationship tuples in the store.
+  rpc Write(WriteRequest) returns (WriteResponse);
+  // Read retrieves relationship tuples matching a partial tuple filter.
+  rpc Read(ReadRequest) returns (ReadResponse);
+  // ListObjects returns all objects of a given type that a user has a
+  // specific relationship with.
+  rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse);
+  // ListUsers returns all users that have a specific relationship with an object.
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+}
+
+// ===========================================================================
+// Common
+// ===========================================================================
+
+message TupleKey {
+  string user = 1; // e.g. "identity:user_abc"
+  string relation = 2; // e.g. "owner"
+  string object = 3; // e.g. "organization:org_123"
+}
+
+message Tuple {
+  TupleKey key = 1;
+  google.protobuf.Timestamp timestamp = 2;
+}
+
+// ===========================================================================
+// Check
+// ===========================================================================
+
+message CheckRequest {
+  TupleKey tuple_key = 1;
+}
+
+message CheckResponse {
+  bool allowed = 1;
+}
+
+// ===========================================================================
+// BatchCheck
+// ===========================================================================
+
+message BatchCheckItem {
+  TupleKey tuple_key = 1;
+  string correlation_id = 2;
+}
+
+message BatchCheckRequest {
+  repeated BatchCheckItem checks = 1;
+}
+
+message BatchCheckResult {
+  bool allowed = 1;
+  string error = 2;
+}
+
+message BatchCheckResponse {
+  map<string, BatchCheckResult> results = 1;
+}
+
+// ===========================================================================
+// Write
+// ===========================================================================
+
+message WriteRequest {
+  repeated TupleKey writes = 1;
+  repeated TupleKey deletes = 2;
+}
+
+message WriteResponse {}
+
+// ===========================================================================
+// Read
+// ===========================================================================
+
+message ReadRequest {
+  TupleKey tuple_key = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ReadResponse {
+  repeated Tuple tuples = 1;
+  string next_page_token = 2;
+}
+
+// ===========================================================================
+// ListObjects
+// ===========================================================================
+
+message ListObjectsRequest {
+  string type = 1; // e.g. "organization"
+  string relation = 2; // e.g. "member"
+  string user = 3; // e.g. "identity:user_abc"
+}
+
+message ListObjectsResponse {
+  repeated string objects = 1; // e.g. ["organization:org_123"]
+}
+
+// ===========================================================================
+// ListUsers
+// ===========================================================================
+
+message UserTypeFilter {
+  string type = 1; // e.g. "identity"
+  string relation = 2; // optional, for usersets
+}
+
+message ListUsersRequest {
+  string object = 1; // e.g. "organization:org_123"
+  string relation = 2; // e.g. "member"
+  repeated UserTypeFilter user_filters = 3; // at least one required
+}
+
+message User {
+  oneof user {
+    string object = 1; // e.g. "identity:user_abc"
+    string wildcard = 2; // e.g. "identity:*"
+  }
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+}

@@ -75,6 +75,13 @@ func fromProtoServicePolicyType(value zitimanagementv1.ServicePolicyType) (strin
 	}
 }
 
+func optionalProtoServicePolicyType(value zitimanagementv1.ServicePolicyType) (string, error) {
+	if value == zitimanagementv1.ServicePolicyType_SERVICE_POLICY_TYPE_UNSPECIFIED {
+		return "", nil
+	}
+	return fromProtoServicePolicyType(value)
+}
+
 func fromProtoHostV1Config(value *zitimanagementv1.HostV1Config) (*ziti.HostV1ConfigData, error) {
 	if value == nil {
 		return nil, nil

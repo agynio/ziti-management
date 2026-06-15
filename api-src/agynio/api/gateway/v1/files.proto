@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/files/v1/files.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service FilesGateway {
+  rpc UploadFile(stream agynio.api.files.v1.UploadFileRequest) returns (agynio.api.files.v1.UploadFileResponse);
+  rpc GetFileMetadata(agynio.api.files.v1.GetFileMetadataRequest) returns (agynio.api.files.v1.GetFileMetadataResponse);
+  rpc GetDownloadUrl(agynio.api.files.v1.GetDownloadUrlRequest) returns (agynio.api.files.v1.GetDownloadUrlResponse);
+  rpc GetFileContent(agynio.api.files.v1.GetFileContentRequest) returns (stream agynio.api.files.v1.GetFileContentResponse);
+}

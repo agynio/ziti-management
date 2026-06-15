@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/token_counting/v1/token_counting.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service TokenCountingGateway {
+  rpc CountTokens(agynio.api.token_counting.v1.CountTokensRequest) returns (agynio.api.token_counting.v1.CountTokensResponse);
+}

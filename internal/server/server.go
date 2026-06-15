@@ -42,8 +42,12 @@ type zitiClient interface {
 	CreateService(ctx context.Context, name string, roleAttributes []string) (string, error)
 	CreateServiceWithConfigs(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData) (string, error)
 	CreateServiceWithConfigsAndTags(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData, tags map[string]string) (string, error)
+	GetService(ctx context.Context, serviceID string) (ziti.OpenZitiService, error)
+	ListServices(ctx context.Context, filter ziti.ServiceListFilter, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiService], error)
 	CreateServicePolicy(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string) (string, error)
 	CreateServicePolicyWithTags(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string, tags map[string]string) (string, error)
+	GetServicePolicy(ctx context.Context, policyID string) (ziti.OpenZitiServicePolicy, error)
+	ListServicePolicies(ctx context.Context, filter ziti.ServicePolicyListFilter, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiServicePolicy], error)
 	CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error)
 	CreateDeviceIdentityWithOptions(ctx context.Context, userIdentityID uuid.UUID, name string, additionalRoleAttributes []string, tags map[string]string) (string, string, error)
 	CreateTunnelIdentity(ctx context.Context, networkID, tunnelCredentialID string, tags map[string]string) (string, ziti.EnrollmentJWT, error)
@@ -177,6 +181,12 @@ func (s *Server) CreateService(ctx context.Context, req *zitimanagementv1.Create
 		serviceID, err = s.ziti.CreateService(ctx, name, roleAttributes)
 	}
 	if err != nil {
+		if req.GetReturnExisting() {
+			service, getErr := s.getServiceByName(ctx, name)
+			if getErr == nil {
+				return &zitimanagementv1.CreateServiceResponse{ZitiServiceId: service.ID, ZitiServiceName: service.Name}, nil
+			}
+		}
 		return nil, status.Errorf(codes.Internal, "create ziti service: %v", err)
 	}
 
@@ -184,6 +194,53 @@ func (s *Server) CreateService(ctx context.Context, req *zitimanagementv1.Create
 		ZitiServiceId:   serviceID,
 		ZitiServiceName: name,
 	}, nil
+}
+
+func (s *Server) GetService(ctx context.Context, req *zitimanagementv1.GetServiceRequest) (*zitimanagementv1.GetServiceResponse, error) {
+	serviceID := req.GetZitiServiceId()
+	if serviceID != "" {
+		service, err := s.ziti.GetService(ctx, serviceID)
+		if err != nil {
+			return nil, zitiResourceStatusError(err)
+		}
+		return &zitimanagementv1.GetServiceResponse{Service: toProtoOpenZitiService(service)}, nil
+	}
+	name := strings.TrimSpace(req.GetName())
+	if name == "" {
+		return nil, status.Error(codes.InvalidArgument, "ziti_service_id or name is required")
+	}
+	service, err := s.getServiceByName(ctx, name)
+	if err != nil {
+		return nil, zitiResourceStatusError(err)
+	}
+	return &zitimanagementv1.GetServiceResponse{Service: toProtoOpenZitiService(service)}, nil
+}
+
+func (s *Server) ListServices(ctx context.Context, req *zitimanagementv1.ListServicesRequest) (*zitimanagementv1.ListServicesResponse, error) {
+	result, err := s.ziti.ListServices(ctx, ziti.ServiceListFilter{
+		Name:           strings.TrimSpace(req.GetName()),
+		NamePrefix:     strings.TrimSpace(req.GetNamePrefix()),
+		RoleAttributes: req.GetRoleAttributes(),
+	}, req.GetPageSize(), req.GetPageToken())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list ziti services: %v", err)
+	}
+	resp := &zitimanagementv1.ListServicesResponse{Services: make([]*zitimanagementv1.OpenZitiService, len(result.Items)), NextPageToken: result.NextPageToken}
+	for i, item := range result.Items {
+		resp.Services[i] = toProtoOpenZitiService(item)
+	}
+	return resp, nil
+}
+
+func (s *Server) getServiceByName(ctx context.Context, name string) (ziti.OpenZitiService, error) {
+	result, err := s.ziti.ListServices(ctx, ziti.ServiceListFilter{Name: name}, 2, "")
+	if err != nil {
+		return ziti.OpenZitiService{}, err
+	}
+	if len(result.Items) == 0 {
+		return ziti.OpenZitiService{}, ziti.ErrServiceNotFound
+	}
+	return result.Items[0], nil
 }
 
 func (s *Server) CreateRunnerIdentity(ctx context.Context, req *zitimanagementv1.CreateRunnerIdentityRequest) (*zitimanagementv1.CreateRunnerIdentityResponse, error) {
@@ -394,10 +451,69 @@ func (s *Server) CreateServicePolicy(ctx context.Context, req *zitimanagementv1.
 
 	policyID, err := s.ziti.CreateServicePolicyWithTags(ctx, name, policyType, identityRoles, serviceRoles, req.GetTags())
 	if err != nil {
+		if req.GetReturnExisting() {
+			policy, getErr := s.getServicePolicyByName(ctx, name)
+			if getErr == nil {
+				return &zitimanagementv1.CreateServicePolicyResponse{ZitiServicePolicyId: policy.ID}, nil
+			}
+		}
 		return nil, status.Errorf(codes.Internal, "create ziti service policy: %v", err)
 	}
 
 	return &zitimanagementv1.CreateServicePolicyResponse{ZitiServicePolicyId: policyID}, nil
+}
+
+func (s *Server) GetServicePolicy(ctx context.Context, req *zitimanagementv1.GetServicePolicyRequest) (*zitimanagementv1.GetServicePolicyResponse, error) {
+	policyID := req.GetZitiServicePolicyId()
+	if policyID != "" {
+		policy, err := s.ziti.GetServicePolicy(ctx, policyID)
+		if err != nil {
+			return nil, zitiResourceStatusError(err)
+		}
+		return &zitimanagementv1.GetServicePolicyResponse{ServicePolicy: toProtoOpenZitiServicePolicy(policy)}, nil
+	}
+	name := strings.TrimSpace(req.GetName())
+	if name == "" {
+		return nil, status.Error(codes.InvalidArgument, "ziti_service_policy_id or name is required")
+	}
+	policy, err := s.getServicePolicyByName(ctx, name)
+	if err != nil {
+		return nil, zitiResourceStatusError(err)
+	}
+	return &zitimanagementv1.GetServicePolicyResponse{ServicePolicy: toProtoOpenZitiServicePolicy(policy)}, nil
+}
+
+func (s *Server) ListServicePolicies(ctx context.Context, req *zitimanagementv1.ListServicePoliciesRequest) (*zitimanagementv1.ListServicePoliciesResponse, error) {
+	policyType, err := optionalProtoServicePolicyType(req.GetType())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "type: %v", err)
+	}
+	result, err := s.ziti.ListServicePolicies(ctx, ziti.ServicePolicyListFilter{
+		Name:          strings.TrimSpace(req.GetName()),
+		NamePrefix:    strings.TrimSpace(req.GetNamePrefix()),
+		Type:          policyType,
+		IdentityRoles: req.GetIdentityRoles(),
+		ServiceRoles:  req.GetServiceRoles(),
+	}, req.GetPageSize(), req.GetPageToken())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list ziti service policies: %v", err)
+	}
+	resp := &zitimanagementv1.ListServicePoliciesResponse{ServicePolicies: make([]*zitimanagementv1.OpenZitiServicePolicy, len(result.Items)), NextPageToken: result.NextPageToken}
+	for i, item := range result.Items {
+		resp.ServicePolicies[i] = toProtoOpenZitiServicePolicy(item)
+	}
+	return resp, nil
+}
+
+func (s *Server) getServicePolicyByName(ctx context.Context, name string) (ziti.OpenZitiServicePolicy, error) {
+	result, err := s.ziti.ListServicePolicies(ctx, ziti.ServicePolicyListFilter{Name: name}, 2, "")
+	if err != nil {
+		return ziti.OpenZitiServicePolicy{}, err
+	}
+	if len(result.Items) == 0 {
+		return ziti.OpenZitiServicePolicy{}, ziti.ErrServicePolicyNotFound
+	}
+	return result.Items[0], nil
 }
 
 func (s *Server) DeleteServicePolicy(ctx context.Context, req *zitimanagementv1.DeleteServicePolicyRequest) (*zitimanagementv1.DeleteServicePolicyResponse, error) {
@@ -701,6 +817,15 @@ func toStatusError(err error) error {
 	case errors.Is(err, store.ErrManagedIdentityNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, store.ErrServiceIdentityNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	default:
+		return status.Errorf(codes.Internal, "internal error: %v", err)
+	}
+}
+
+func zitiResourceStatusError(err error) error {
+	switch {
+	case errors.Is(err, ziti.ErrServiceNotFound), errors.Is(err, ziti.ErrServicePolicyNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	default:
 		return status.Errorf(codes.Internal, "internal error: %v", err)
