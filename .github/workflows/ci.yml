@@ -30,6 +30,7 @@ jobs:
 
       - name: Generate gRPC stubs
         run: |
+          cp -R api-src /tmp/agynio-api-proto
           buf generate /tmp/agynio-api-proto \
             --path /tmp/agynio-api-proto/agynio/api/ziti_management/v1 \
             --output .
