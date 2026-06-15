@@ -1,0 +1,302 @@
+syntax = "proto3";
+
+package agynio.api.apps.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/apps/v1;appsv1";
+
+// AppsService manages apps, installations, and related metadata.
+service AppsService {
+  rpc CreateApp(CreateAppRequest) returns (CreateAppResponse);
+  rpc UpdateApp(UpdateAppRequest) returns (UpdateAppResponse);
+  rpc GetApp(GetAppRequest) returns (GetAppResponse);
+  // Resolve an app by slug.
+  rpc GetAppBySlug(GetAppBySlugRequest) returns (GetAppBySlugResponse);
+  rpc ListApps(ListAppsRequest) returns (ListAppsResponse);
+  rpc DeleteApp(DeleteAppRequest) returns (DeleteAppResponse);
+  // Fetch a public app profile for an identity ID.
+  rpc GetAppProfile(GetAppProfileRequest) returns (GetAppProfileResponse);
+  // Validate a service token hash and resolve its app.
+  rpc ValidateServiceToken(ValidateServiceTokenRequest) returns (ValidateServiceTokenResponse);
+  // Self-enrollment: app calls at startup with its service_token.
+  // Creates (or re-creates) the OpenZiti identity + service for the app.
+  // Idempotent: cleans up old ziti resources and creates fresh ones on each call.
+  rpc EnrollApp(EnrollAppRequest) returns (EnrollAppResponse);
+  // Install an app for an organization.
+  rpc InstallApp(InstallAppRequest) returns (InstallAppResponse);
+  // Fetch an installation by ID.
+  rpc GetInstallation(GetInstallationRequest) returns (GetInstallationResponse);
+  // Resolve an installation by slug within an organization.
+  rpc GetInstallationBySlug(GetInstallationBySlugRequest) returns (GetInstallationBySlugResponse);
+  // Resolve an installation by identity ID within an organization.
+  rpc GetInstallationByIdentityId(GetInstallationByIdentityIdRequest) returns (GetInstallationByIdentityIdResponse);
+  // List installations with optional filters.
+  rpc ListInstallations(ListInstallationsRequest) returns (ListInstallationsResponse);
+  // Update an installation's metadata.
+  rpc UpdateInstallation(UpdateInstallationRequest) returns (UpdateInstallationResponse);
+  // Uninstall an app by installation ID.
+  rpc UninstallApp(UninstallAppRequest) returns (UninstallAppResponse);
+  // Fetch only the installation configuration for scoped access.
+  rpc GetInstallationConfiguration(GetInstallationConfigurationRequest) returns (GetInstallationConfigurationResponse);
+  // Report status for an installation.
+  rpc ReportInstallationStatus(ReportInstallationStatusRequest) returns (ReportInstallationStatusResponse);
+  // Append an audit log entry for an installation.
+  rpc AppendInstallationAuditLogEntry(AppendInstallationAuditLogEntryRequest) returns (AppendInstallationAuditLogEntryResponse);
+  // List audit log entries for an installation.
+  rpc ListInstallationAuditLogEntries(ListInstallationAuditLogEntriesRequest) returns (ListInstallationAuditLogEntriesResponse);
+}
+
+message EntityMeta {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+enum AppVisibility {
+  APP_VISIBILITY_UNSPECIFIED = 0;
+  APP_VISIBILITY_PUBLIC = 1;
+  APP_VISIBILITY_INTERNAL = 2;
+}
+
+message App {
+  EntityMeta meta = 1;
+  string slug = 2;
+  string name = 3;
+  string description = 4;
+  string icon = 5;
+  string identity_id = 6;
+  string ziti_identity_id = 7;
+  string ziti_service_id = 8;
+  string organization_id = 9;
+  AppVisibility visibility = 10;
+  repeated string permissions = 11;
+}
+
+message AppProfile {
+  string id = 1;
+  string slug = 2;
+  string name = 3;
+  string description = 4;
+  string icon = 5;
+}
+
+message Installation {
+  EntityMeta meta = 1;
+  string app_id = 2;
+  string organization_id = 3;
+  string slug = 4;
+  google.protobuf.Struct configuration = 5;
+  optional string status = 6;
+}
+
+enum InstallationAuditLogLevel {
+  INSTALLATION_AUDIT_LOG_LEVEL_UNSPECIFIED = 0;
+  INSTALLATION_AUDIT_LOG_LEVEL_INFO = 1;
+  INSTALLATION_AUDIT_LOG_LEVEL_WARNING = 2;
+  INSTALLATION_AUDIT_LOG_LEVEL_ERROR = 3;
+}
+
+message InstallationAuditLogEntry {
+  string id = 1;
+  string installation_id = 2;
+  string message = 3;
+  InstallationAuditLogLevel level = 4;
+  optional string idempotency_key = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message CreateAppRequest {
+  string organization_id = 1;
+  string slug = 2;
+  string name = 3;
+  string description = 4;
+  string icon = 5;
+  AppVisibility visibility = 6;
+  repeated string permissions = 7;
+}
+
+message CreateAppResponse {
+  App app = 1;
+  string service_token = 2;
+}
+
+message GetAppRequest {
+  string id = 1;
+}
+
+message GetAppResponse {
+  App app = 1;
+}
+
+message UpdateAppRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional string icon = 4;
+  optional AppVisibility visibility = 5;
+}
+
+message UpdateAppResponse {
+  App app = 1;
+}
+
+message GetAppBySlugRequest {
+  string organization_id = 1;
+  string slug = 2;
+}
+
+message GetAppBySlugResponse {
+  App app = 1;
+}
+
+message ListAppsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string organization_id = 3;
+  AppVisibility visibility = 4;
+}
+
+message ListAppsResponse {
+  repeated App apps = 1;
+  string next_page_token = 2;
+}
+
+message DeleteAppRequest {
+  string id = 1;
+}
+
+message DeleteAppResponse {}
+
+message GetAppProfileRequest {
+  string identity_id = 1;
+}
+
+message GetAppProfileResponse {
+  AppProfile profile = 1;
+}
+
+message ValidateServiceTokenRequest {
+  string token_hash = 1;
+}
+
+message ValidateServiceTokenResponse {
+  App app = 1;
+}
+
+message EnrollAppRequest {
+  // The raw service token issued during CreateApp.
+  string service_token = 1;
+}
+
+message EnrollAppResponse {
+  // The enrolled OpenZiti identity JSON (cert, key, CA, controller URL).
+  bytes identity_json = 1;
+  // The platform identity ID for this app.
+  string identity_id = 2;
+}
+
+message InstallAppRequest {
+  string app_id = 1;
+  string organization_id = 2;
+  string slug = 3;
+  google.protobuf.Struct configuration = 4;
+}
+
+message InstallAppResponse {
+  Installation installation = 1;
+}
+
+message GetInstallationRequest {
+  string id = 1;
+}
+
+message GetInstallationResponse {
+  Installation installation = 1;
+}
+
+message GetInstallationBySlugRequest {
+  string organization_id = 1;
+  string slug = 2;
+}
+
+message GetInstallationBySlugResponse {
+  Installation installation = 1;
+}
+
+message GetInstallationByIdentityIdRequest {
+  string organization_id = 1;
+  string identity_id = 2;
+}
+
+message GetInstallationByIdentityIdResponse {
+  Installation installation = 1;
+}
+
+message ListInstallationsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string organization_id = 3;
+  string app_id = 4;
+}
+
+message ListInstallationsResponse {
+  repeated Installation installations = 1;
+  string next_page_token = 2;
+}
+
+message UpdateInstallationRequest {
+  string id = 1;
+  optional string slug = 2;
+  optional google.protobuf.Struct configuration = 3;
+}
+
+message UpdateInstallationResponse {
+  Installation installation = 1;
+}
+
+message UninstallAppRequest {
+  string id = 1;
+}
+
+message UninstallAppResponse {}
+
+message GetInstallationConfigurationRequest {
+  string id = 1;
+}
+
+message GetInstallationConfigurationResponse {
+  google.protobuf.Struct configuration = 1;
+}
+
+message ReportInstallationStatusRequest {
+  string installation_id = 1;
+  string status = 2;
+}
+
+message ReportInstallationStatusResponse {
+  Installation installation = 1;
+}
+
+message AppendInstallationAuditLogEntryRequest {
+  string installation_id = 1;
+  string message = 2;
+  InstallationAuditLogLevel level = 3;
+  optional string idempotency_key = 4;
+}
+
+message AppendInstallationAuditLogEntryResponse {
+  InstallationAuditLogEntry entry = 1;
+}
+
+message ListInstallationAuditLogEntriesRequest {
+  string installation_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListInstallationAuditLogEntriesResponse {
+  repeated InstallationAuditLogEntry entries = 1;
+  string next_page_token = 2;
+}

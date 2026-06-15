@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/threads/v1/threads.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service ThreadsGateway {
+  rpc CreateThread(agynio.api.threads.v1.CreateThreadRequest) returns (agynio.api.threads.v1.CreateThreadResponse);
+  rpc ArchiveThread(agynio.api.threads.v1.ArchiveThreadRequest) returns (agynio.api.threads.v1.ArchiveThreadResponse);
+  rpc AddParticipant(agynio.api.threads.v1.AddParticipantRequest) returns (agynio.api.threads.v1.AddParticipantResponse);
+  rpc SendMessage(agynio.api.threads.v1.SendMessageRequest) returns (agynio.api.threads.v1.SendMessageResponse);
+  rpc GetThreads(agynio.api.threads.v1.GetThreadsRequest) returns (agynio.api.threads.v1.GetThreadsResponse);
+  rpc ListOrganizationThreads(agynio.api.threads.v1.ListOrganizationThreadsRequest) returns (agynio.api.threads.v1.ListOrganizationThreadsResponse);
+  rpc GetOrganizationThreads(agynio.api.threads.v1.GetOrganizationThreadsRequest) returns (agynio.api.threads.v1.GetOrganizationThreadsResponse);
+  rpc GetThread(agynio.api.threads.v1.GetThreadRequest) returns (agynio.api.threads.v1.GetThreadResponse);
+  rpc GetMessages(agynio.api.threads.v1.GetMessagesRequest) returns (agynio.api.threads.v1.GetMessagesResponse);
+  rpc GetUnackedMessages(agynio.api.threads.v1.GetUnackedMessagesRequest) returns (agynio.api.threads.v1.GetUnackedMessagesResponse);
+  rpc GetUnackedMessageCounts(agynio.api.threads.v1.GetUnackedMessageCountsRequest) returns (agynio.api.threads.v1.GetUnackedMessageCountsResponse);
+  rpc AckMessages(agynio.api.threads.v1.AckMessagesRequest) returns (agynio.api.threads.v1.AckMessagesResponse);
+}

@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package agynio.api.groups.v1;
+
+import "agynio/api/groups/v1/groups.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/groups/v1;groupsv1";
+
+message GroupMembershipAddedEvent {
+  string group_id = 1;
+  GroupMemberType member_type = 2;
+  string member_id = 3;
+}
+
+message GroupMembershipRemovedEvent {
+  string group_id = 1;
+  GroupMemberType member_type = 2;
+  string member_id = 3;
+}
+
+message GroupDeletedEvent {
+  string group_id = 1;
+  string organization_id = 2;
+}

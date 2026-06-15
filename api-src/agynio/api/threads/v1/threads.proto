@@ -1,0 +1,371 @@
+syntax = "proto3";
+
+package agynio.api.threads.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/threads/v1;threadsv1";
+
+// ThreadsService manages messaging threads between participants.
+// It stores messages, tracks participants, and provides message acknowledgment.
+// Participant-type-agnostic — identifies participants by UUID.
+service ThreadsService {
+  // Create a new thread with initial participants.
+  rpc CreateThread(CreateThreadRequest) returns (CreateThreadResponse);
+
+  // Archive a thread (soft-delete).
+  rpc ArchiveThread(ArchiveThreadRequest) returns (ArchiveThreadResponse);
+
+  // Degrade a thread (mark as degraded).
+  rpc DegradeThread(DegradeThreadRequest) returns (DegradeThreadResponse);
+
+  // Add a participant to an existing thread.
+  rpc AddParticipant(AddParticipantRequest) returns (AddParticipantResponse);
+
+  // Send a message to a thread (text and/or file references).
+  // Creates a MessageRecipient row per recipient and publishes
+  // a message.created notification to each recipient's room.
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+
+  // List threads for a participant with pagination.
+  rpc GetThreads(GetThreadsRequest) returns (GetThreadsResponse);
+
+  // List threads for an organization with pagination.
+  rpc ListOrganizationThreads(ListOrganizationThreadsRequest) returns (ListOrganizationThreadsResponse);
+
+  // Get threads for an organization with pagination.
+  // Deprecated: use ListOrganizationThreads.
+  rpc GetOrganizationThreads(GetOrganizationThreadsRequest) returns (GetOrganizationThreadsResponse);
+
+  // Get a thread by ID.
+  rpc GetThread(GetThreadRequest) returns (GetThreadResponse);
+
+  // List messages in a thread with pagination.
+  // Read-only — does not change acknowledgment state.
+  rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse);
+
+  // List unacknowledged messages for a participant across all threads.
+  rpc GetUnackedMessages(GetUnackedMessagesRequest) returns (GetUnackedMessagesResponse);
+
+  // Get unacknowledged message counts per thread for a participant.
+  rpc GetUnackedMessageCounts(GetUnackedMessageCountsRequest) returns (GetUnackedMessageCountsResponse);
+
+  // Acknowledge messages as processed by a participant.
+  rpc AckMessages(AckMessagesRequest) returns (AckMessagesResponse);
+}
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+enum ThreadStatus {
+  THREAD_STATUS_UNSPECIFIED = 0;
+  THREAD_STATUS_ACTIVE = 1;
+  THREAD_STATUS_ARCHIVED = 2;
+  THREAD_STATUS_DEGRADED = 3;
+}
+
+enum MessageOrder {
+  MESSAGE_ORDER_UNSPECIFIED = 0;
+  MESSAGE_ORDER_OLDEST_FIRST = 1;
+  MESSAGE_ORDER_NEWEST_FIRST = 2;
+}
+
+enum SortDirection {
+  SORT_DIRECTION_UNSPECIFIED = 0;
+  SORT_DIRECTION_ASC = 1;
+  SORT_DIRECTION_DESC = 2;
+}
+
+// ===========================================================================
+// Entities
+// ===========================================================================
+
+// A messaging thread between participants.
+message Thread {
+  string id = 1; // UUID
+  repeated Participant participants = 2;
+  ThreadStatus status = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  // Owning organization UUID. May be empty for legacy threads created
+  // before organization linkage was recorded.
+  string organization_id = 6;
+  // Count of messages in the thread, updated on send.
+  int32 message_count = 7;
+}
+
+// A participant in a thread.
+message Participant {
+  string id = 1; // UUID
+  google.protobuf.Timestamp joined_at = 2;
+  // When true, the participant receives messages but does not trigger workload starts.
+  bool passive = 3;
+  // Resolved @nickname for this participant in the organization context.
+  string nickname = 4;
+}
+
+// A message within a thread.
+message Message {
+  string id = 1; // UUID
+  string thread_id = 2; // UUID — parent thread
+  string sender_id = 3; // UUID — participant who sent the message
+  string body = 4; // text content
+  repeated string file_ids = 5; // referenced file UUIDs (may be empty)
+  google.protobuf.Timestamp created_at = 6;
+}
+
+// Tracks acknowledgment state per participant per message.
+// Created by SendMessage — one row per recipient (all thread participants
+// except the sender). Not exposed in RPCs; documented here as schema
+// reference for the underlying data model.
+message MessageRecipient {
+  string message_id = 1; // UUID — FK to Message
+  string thread_id = 2; // UUID — denormalized for query efficiency
+  string participant_id = 3; // UUID — recipient
+  google.protobuf.Timestamp acked_at = 4; // absent = unacknowledged
+}
+
+// ===========================================================================
+// CreateThread
+// ===========================================================================
+
+// Creates a new thread with initial participants.
+// Exactly one of participant_ids (deprecated) or participants must be provided.
+// Setting both is rejected by the server.
+message CreateThreadRequest {
+  // Deprecated: use participants instead.
+  // Initial participant UUIDs. Passive participants must be added with AddParticipant.
+  repeated string participant_ids = 1 [deprecated = true];
+  // Initial participants by UUID or nickname.
+  // At least one required unless initiator metadata supplies the only participant.
+  repeated ParticipantIdentifier participants = 2;
+  // Organization context for thread creation; may be derived from the caller
+  // identity when omitted and used as the nickname resolution scope.
+  optional string organization_id = 3; // UUID
+}
+
+message CreateThreadResponse {
+  Thread thread = 1;
+}
+
+// ===========================================================================
+// ArchiveThread
+// ===========================================================================
+
+message ArchiveThreadRequest {
+  string thread_id = 1; // UUID
+}
+
+message ArchiveThreadResponse {
+  Thread thread = 1;
+}
+
+// ===========================================================================
+// DegradeThread
+// ===========================================================================
+
+message DegradeThreadRequest {
+  string thread_id = 1; // UUID
+  // Reason for degrading the thread.
+  string reason = 2;
+}
+
+message DegradeThreadResponse {
+  Thread thread = 1;
+}
+
+// ===========================================================================
+// AddParticipant
+// ===========================================================================
+
+message AddParticipantRequest {
+  string thread_id = 1; // UUID
+  // Deprecated: use participant instead.
+  string participant_id = 2 [deprecated = true]; // UUID
+  reserved 3;
+  // Organization context for the thread; may be derived from the caller
+  // identity when omitted and used as the nickname resolution scope.
+  optional string organization_id = 4; // UUID
+  // Passive participants receive messages but do not trigger workload starts.
+  bool passive = 5;
+  ParticipantIdentifier participant = 6;
+}
+
+message ParticipantIdentifier {
+  oneof identifier {
+    string participant_id = 1; // UUID
+    // @nickname to resolve within organization_id.
+    string participant_nickname = 2;
+  }
+}
+
+message AddParticipantResponse {
+  Thread thread = 1;
+}
+
+// ===========================================================================
+// SendMessage
+// ===========================================================================
+
+message SendMessageRequest {
+  string thread_id = 1; // UUID
+  string sender_id = 2; // UUID — must be a participant
+  // Text content. May be empty when file_ids is non-empty.
+  // At least one of body or file_ids must be provided.
+  string body = 3;
+  // File references (UUIDs). May be empty when body is non-empty.
+  // At least one of body or file_ids must be provided.
+  repeated string file_ids = 4;
+}
+
+message SendMessageResponse {
+  Message message = 1;
+}
+
+// ===========================================================================
+// GetThreads
+// ===========================================================================
+
+message GetThreadsRequest {
+  string participant_id = 1; // UUID — return threads this participant belongs to
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message GetThreadsResponse {
+  repeated Thread threads = 1;
+  string next_page_token = 2;
+}
+
+// ===========================================================================
+// ListOrganizationThreads
+// ===========================================================================
+
+enum ListOrganizationThreadsSortField {
+  LIST_ORGANIZATION_THREADS_SORT_FIELD_UNSPECIFIED = 0;
+  LIST_ORGANIZATION_THREADS_SORT_FIELD_CREATED = 1;
+  LIST_ORGANIZATION_THREADS_SORT_FIELD_UPDATED = 2;
+  LIST_ORGANIZATION_THREADS_SORT_FIELD_MESSAGE_COUNT = 3;
+  LIST_ORGANIZATION_THREADS_SORT_FIELD_STATUS = 4;
+}
+
+message ListOrganizationThreadsFilter {
+  repeated ThreadStatus status_in = 1;
+  repeated string participant_id_in = 2;
+  optional google.protobuf.Timestamp created_after = 3;
+  optional google.protobuf.Timestamp created_before = 4;
+}
+
+message ListOrganizationThreadsSort {
+  ListOrganizationThreadsSortField field = 1;
+  SortDirection direction = 2;
+}
+
+message ListOrganizationThreadsRequest {
+  string organization_id = 1; // UUID
+  ListOrganizationThreadsFilter filter = 2;
+  ListOrganizationThreadsSort sort = 3;
+  int32 page_size = 4;
+  // Opaque cursor; reuse only with the same sort and filter.
+  string page_token = 5;
+}
+
+message ListOrganizationThreadsResponse {
+  repeated Thread threads = 1;
+  string next_page_token = 2;
+}
+
+// ===========================================================================
+// GetOrganizationThreads
+// ===========================================================================
+
+message GetOrganizationThreadsRequest {
+  string organization_id = 1; // UUID
+  int32 page_size = 2;
+  string page_token = 3;
+  // Filter by status. THREAD_STATUS_UNSPECIFIED means no filter.
+  ThreadStatus status = 4;
+}
+
+message GetOrganizationThreadsResponse {
+  repeated Thread threads = 1;
+  string next_page_token = 2;
+}
+
+// ===========================================================================
+// GetThread
+// ===========================================================================
+
+message GetThreadRequest {
+  string thread_id = 1; // UUID
+}
+
+message GetThreadResponse {
+  Thread thread = 1;
+}
+
+// ===========================================================================
+// GetMessages
+// ===========================================================================
+
+message GetMessagesRequest {
+  string thread_id = 1; // UUID
+  int32 page_size = 2;
+  string page_token = 3;
+  // Message ordering for pagination. Defaults to MESSAGE_ORDER_OLDEST_FIRST.
+  // page_token values are order-sensitive; reuse only with the same order.
+  MessageOrder order = 4;
+}
+
+message GetMessagesResponse {
+  repeated Message messages = 1;
+  string next_page_token = 2;
+}
+
+// ===========================================================================
+// GetUnackedMessages
+// ===========================================================================
+
+message GetUnackedMessagesRequest {
+  string participant_id = 1; // UUID
+  int32 page_size = 2;
+  string page_token = 3;
+  // Optional thread filter.
+  optional string thread_id = 4; // UUID
+}
+
+message GetUnackedMessagesResponse {
+  repeated Message messages = 1;
+  string next_page_token = 2;
+}
+
+// ===========================================================================
+// GetUnackedMessageCounts
+// ===========================================================================
+
+message GetUnackedMessageCountsRequest {
+  string participant_id = 1; // UUID
+}
+
+message GetUnackedMessageCountsResponse {
+  // key = thread_id, value = unacknowledged message count.
+  // Only threads with unacknowledged messages are included (missing key => 0).
+  map<string, int32> counts_by_thread_id = 1;
+}
+
+// ===========================================================================
+// AckMessages
+// ===========================================================================
+
+message AckMessagesRequest {
+  string participant_id = 1; // UUID
+  repeated string message_ids = 2; // UUIDs of messages to acknowledge
+}
+
+message AckMessagesResponse {
+  // Number of messages newly acknowledged. Already-acked and unknown IDs
+  // are silently ignored — this is intentional for idempotency so that
+  // retried ack requests do not fail.
+  int32 acked_count = 1;
+}

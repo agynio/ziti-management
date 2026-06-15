@@ -1,0 +1,205 @@
+syntax = "proto3";
+
+package agynio.api.llm.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/llm/v1;llmv1";
+
+// LLMService manages provider and model resources and resolves models.
+service LLMService {
+  // --- Providers ---
+  rpc CreateLLMProvider(CreateLLMProviderRequest) returns (CreateLLMProviderResponse);
+  rpc GetLLMProvider(GetLLMProviderRequest) returns (GetLLMProviderResponse);
+  rpc UpdateLLMProvider(UpdateLLMProviderRequest) returns (UpdateLLMProviderResponse);
+  rpc DeleteLLMProvider(DeleteLLMProviderRequest) returns (DeleteLLMProviderResponse);
+  rpc ListLLMProviders(ListLLMProvidersRequest) returns (ListLLMProvidersResponse);
+
+  // --- Models ---
+  rpc CreateModel(CreateModelRequest) returns (CreateModelResponse);
+  rpc GetModel(GetModelRequest) returns (GetModelResponse);
+  rpc UpdateModel(UpdateModelRequest) returns (UpdateModelResponse);
+  rpc DeleteModel(DeleteModelRequest) returns (DeleteModelResponse);
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+
+  // --- Test ---
+  rpc TestModel(TestModelRequest) returns (TestModelResponse);
+
+  // --- Resolution ---
+  rpc ResolveModel(ResolveModelRequest) returns (ResolveModelResponse);
+}
+
+// ===========================================================================
+// Common
+// ===========================================================================
+
+message EntityMeta {
+  string id = 1; // UUID
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+enum AuthMethod {
+  AUTH_METHOD_UNSPECIFIED = 0;
+  AUTH_METHOD_BEARER = 1;
+  AUTH_METHOD_X_API_KEY = 2;
+}
+
+enum Protocol {
+  PROTOCOL_UNSPECIFIED = 0;
+  PROTOCOL_RESPONSES = 1;
+  PROTOCOL_ANTHROPIC_MESSAGES = 2;
+}
+
+// ===========================================================================
+// Provider
+// ===========================================================================
+
+message LLMProvider {
+  EntityMeta meta = 1;
+  string endpoint = 2;
+  AuthMethod auth_method = 3;
+  string organization_id = 4; // UUID
+  Protocol protocol = 5;
+}
+
+message CreateLLMProviderRequest {
+  string endpoint = 1;
+  AuthMethod auth_method = 2;
+  string token = 3;
+  string organization_id = 4;
+  Protocol protocol = 5;
+}
+
+message CreateLLMProviderResponse {
+  LLMProvider provider = 1;
+}
+
+message GetLLMProviderRequest {
+  string id = 1; // UUID
+}
+
+message GetLLMProviderResponse {
+  LLMProvider provider = 1;
+}
+
+message UpdateLLMProviderRequest {
+  string id = 1; // UUID
+  optional string endpoint = 2;
+  optional AuthMethod auth_method = 3;
+  optional string token = 4;
+  optional Protocol protocol = 5;
+}
+
+message UpdateLLMProviderResponse {
+  LLMProvider provider = 1;
+}
+
+message DeleteLLMProviderRequest {
+  string id = 1; // UUID
+}
+
+message DeleteLLMProviderResponse {}
+
+message ListLLMProvidersRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string organization_id = 3;
+}
+
+message ListLLMProvidersResponse {
+  repeated LLMProvider providers = 1;
+  string next_page_token = 2;
+}
+
+// ===========================================================================
+// Model
+// ===========================================================================
+
+message Model {
+  EntityMeta meta = 1;
+  string name = 2;
+  string llm_provider_id = 3; // UUID
+  string remote_name = 4;
+}
+
+message CreateModelRequest {
+  string name = 1;
+  string llm_provider_id = 2; // UUID
+  string remote_name = 3;
+  string organization_id = 4;
+}
+
+message CreateModelResponse {
+  Model model = 1;
+}
+
+message GetModelRequest {
+  string id = 1; // UUID
+}
+
+message GetModelResponse {
+  Model model = 1;
+}
+
+message UpdateModelRequest {
+  string id = 1; // UUID
+  optional string name = 2;
+  optional string llm_provider_id = 3; // UUID
+  optional string remote_name = 4;
+}
+
+message UpdateModelResponse {
+  Model model = 1;
+}
+
+message DeleteModelRequest {
+  string id = 1; // UUID
+}
+
+message DeleteModelResponse {}
+
+message ListModelsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string llm_provider_id = 3; // optional filter by provider
+  string organization_id = 4;
+}
+
+message ListModelsResponse {
+  repeated Model models = 1;
+  string next_page_token = 2;
+}
+
+// ===========================================================================
+// Test
+// ===========================================================================
+
+message TestModelRequest {
+  string model_id = 1; // UUID
+}
+
+message TestModelResponse {
+  string output_text = 1;
+}
+
+// ===========================================================================
+// Resolution
+// ===========================================================================
+
+message ResolveModelRequest {
+  string model_id = 1; // UUID
+}
+
+message ResolveModelResponse {
+  string endpoint = 1;
+  string token = 2;
+  string remote_name = 3;
+  string organization_id = 4; // UUID
+  Protocol protocol = 5;
+  AuthMethod auth_method = 6;
+}

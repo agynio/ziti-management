@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/tracing/v1/tracing.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service TracingGateway {
+  rpc ListSpans(agynio.api.tracing.v1.ListSpansRequest) returns (agynio.api.tracing.v1.ListSpansResponse);
+  rpc GetSpan(agynio.api.tracing.v1.GetSpanRequest) returns (agynio.api.tracing.v1.GetSpanResponse);
+  rpc GetTrace(agynio.api.tracing.v1.GetTraceRequest) returns (agynio.api.tracing.v1.GetTraceResponse);
+  rpc GetTraceSummary(agynio.api.tracing.v1.GetTraceSummaryRequest) returns (agynio.api.tracing.v1.GetTraceSummaryResponse);
+  rpc GetTraceSpanTotals(agynio.api.tracing.v1.GetTraceSpanTotalsRequest) returns (agynio.api.tracing.v1.GetTraceSpanTotalsResponse);
+}

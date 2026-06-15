@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/notifications/v1/notifications.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service NotificationsGateway {
+  rpc Subscribe(agynio.api.notifications.v1.SubscribeRequest) returns (stream agynio.api.notifications.v1.SubscribeResponse);
+}

@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/metering/v1/metering.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service MeteringGateway {
+  rpc QueryUsage(agynio.api.metering.v1.QueryUsageRequest) returns (agynio.api.metering.v1.QueryUsageResponse);
+}

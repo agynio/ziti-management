@@ -1,0 +1,330 @@
+syntax = "proto3";
+
+package agynio.api.users.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/users/v1;usersv1";
+
+service UsersService {
+  rpc ResolveOrCreateUser(ResolveOrCreateUserRequest) returns (ResolveOrCreateUserResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc GetUserByOIDCSubject(GetUserByOIDCSubjectRequest) returns (GetUserByOIDCSubjectResponse);
+  rpc BatchGetUsers(BatchGetUsersRequest) returns (BatchGetUsersResponse);
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  rpc CreateAPIToken(CreateAPITokenRequest) returns (CreateAPITokenResponse);
+  rpc ListAPITokens(ListAPITokensRequest) returns (ListAPITokensResponse);
+  rpc RevokeAPIToken(RevokeAPITokenRequest) returns (RevokeAPITokenResponse);
+  rpc ResolveAPIToken(ResolveAPITokenRequest) returns (ResolveAPITokenResponse);
+
+  // --- Current User ---
+  rpc GetMe(GetMeRequest) returns (GetMeResponse);
+  // Updates cluster-wide profile fields (name/username). Org-scoped
+  // nicknames are managed via OrganizationsService.SetMyOrgNickname.
+  rpc UpdateMe(UpdateMeRequest) returns (UpdateMeResponse);
+
+  // --- User Directory ---
+  rpc SearchUsers(SearchUsersRequest) returns (SearchUsersResponse);
+
+  // --- Admin User Management ---
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+
+  // --- Devices ---
+  rpc CreateDevice(CreateDeviceRequest) returns (CreateDeviceResponse);
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+  rpc DeleteDevice(DeleteDeviceRequest) returns (DeleteDeviceResponse);
+}
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+enum ClusterRole {
+  CLUSTER_ROLE_UNSPECIFIED = 0;
+  CLUSTER_ROLE_ADMIN = 1;
+}
+
+enum DeviceStatus {
+  DEVICE_STATUS_UNSPECIFIED = 0;
+  DEVICE_STATUS_PENDING = 1;
+  DEVICE_STATUS_ENROLLED = 2;
+}
+
+// ===========================================================================
+// Common
+// ===========================================================================
+
+message EntityMeta {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message User {
+  EntityMeta meta = 1;
+  string oidc_subject = 2;
+  string name = 3;
+  string email = 4;
+  string photo_url = 5;
+  // Organization-scoped nickname (set via OrganizationsService.SetMyOrgNickname).
+  string nickname = 6;
+  // Cluster-wide username. May be empty for existing users until set.
+  string username = 7;
+}
+
+// ===========================================================================
+// Device
+// ===========================================================================
+
+message Device {
+  EntityMeta meta = 1;
+  string user_identity_id = 2;
+  string name = 3;
+  string openziti_identity_id = 4;
+  DeviceStatus status = 5;
+}
+
+// ===========================================================================
+// ResolveOrCreateUser
+// ===========================================================================
+
+message ResolveOrCreateUserRequest {
+  string oidc_subject = 1;
+  string name = 2;
+  string email = 3;
+  string photo_url = 4;
+  optional string preferred_username = 5;
+}
+
+message ResolveOrCreateUserResponse {
+  User user = 1;
+  bool created = 2;
+}
+
+// ===========================================================================
+// GetUser
+// ===========================================================================
+
+message GetUserRequest {
+  string identity_id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+  ClusterRole cluster_role = 2;
+}
+
+// ===========================================================================
+// GetUserByOIDCSubject
+// ===========================================================================
+
+message GetUserByOIDCSubjectRequest {
+  string oidc_subject = 1;
+}
+
+message GetUserByOIDCSubjectResponse {
+  User user = 1;
+}
+
+// ===========================================================================
+// BatchGetUsers
+// ===========================================================================
+
+message BatchGetUsersRequest {
+  repeated string identity_ids = 1;
+}
+
+message BatchGetUsersResponse {
+  repeated User users = 1;
+}
+
+// ===========================================================================
+// UpdateUser
+// ===========================================================================
+
+message UpdateUserRequest {
+  string identity_id = 1;
+  optional string name = 2;
+  optional string email = 3;
+  optional string photo_url = 4;
+  optional string nickname = 5;
+  optional ClusterRole cluster_role = 6;
+  optional string username = 7;
+}
+
+message UpdateUserResponse {
+  User user = 1;
+}
+
+// ===========================================================================
+// GetMe
+// ===========================================================================
+
+message GetMeRequest {}
+
+message GetMeResponse {
+  User user = 1;
+  ClusterRole cluster_role = 2;
+}
+
+// ===========================================================================
+// UpdateMe
+// ===========================================================================
+
+message UpdateMeRequest {
+  optional string name = 1;
+  // Cluster-wide username. Org-scoped nicknames are set via OrganizationsService.SetMyOrgNickname.
+  optional string username = 2;
+}
+
+message UpdateMeResponse {
+  User user = 1;
+  ClusterRole cluster_role = 2;
+}
+
+// ===========================================================================
+// SearchUsers
+// ===========================================================================
+
+message UserDirectoryEntry {
+  string identity_id = 1;
+  string username = 2;
+  string name = 3;
+  string photo_url = 4;
+}
+
+message SearchUsersRequest {
+  string prefix = 1;
+  // Defaults to 10 when unset or zero. Max 20.
+  int32 limit = 2;
+}
+
+message SearchUsersResponse {
+  repeated UserDirectoryEntry users = 1;
+}
+
+// ===========================================================================
+// ListUsers
+// ===========================================================================
+
+message ListUsersRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+}
+
+// ===========================================================================
+// CreateUser
+// ===========================================================================
+
+message CreateUserRequest {
+  string oidc_subject = 1;
+  optional string name = 2;
+  optional string nickname = 3;
+  optional string photo_url = 4;
+  ClusterRole cluster_role = 5;
+  optional string username = 6;
+}
+
+message CreateUserResponse {
+  User user = 1;
+}
+
+// ===========================================================================
+// DeleteUser
+// ===========================================================================
+
+message DeleteUserRequest {
+  string identity_id = 1;
+}
+
+message DeleteUserResponse {}
+
+// ===========================================================================
+// API Tokens
+// ===========================================================================
+
+message APIToken {
+  string id = 1;
+  string identity_id = 2;
+  string name = 3;
+  string token_prefix = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp last_used_at = 7;
+}
+
+message CreateAPITokenRequest {
+  string name = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message CreateAPITokenResponse {
+  APIToken token = 1;
+  string plaintext_token = 2;
+}
+
+message ListAPITokensRequest {}
+
+message ListAPITokensResponse {
+  repeated APIToken tokens = 1;
+}
+
+message RevokeAPITokenRequest {
+  string token_id = 1;
+}
+
+message RevokeAPITokenResponse {}
+
+message ResolveAPITokenRequest {
+  string token_hash = 1;
+}
+
+message ResolveAPITokenResponse {
+  string identity_id = 1;
+  APIToken token = 2;
+}
+
+// ===========================================================================
+// CreateDevice
+// ===========================================================================
+
+message CreateDeviceRequest {
+  string name = 1;
+}
+
+message CreateDeviceResponse {
+  Device device = 1;
+  // Enrollment JWT shown once to the user. Cannot be retrieved again.
+  string enrollment_jwt = 2;
+}
+
+// ===========================================================================
+// ListDevices
+// ===========================================================================
+
+message ListDevicesRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListDevicesResponse {
+  repeated Device devices = 1;
+  string next_page_token = 2;
+}
+
+// ===========================================================================
+// DeleteDevice
+// ===========================================================================
+
+message DeleteDeviceRequest {
+  string id = 1;
+}
+
+message DeleteDeviceResponse {}

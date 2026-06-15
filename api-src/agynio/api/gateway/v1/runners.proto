@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/runner/v1/runner.proto";
+import "agynio/api/runners/v1/runners.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service RunnersGateway {
+  // --- Runners ---
+  rpc RegisterRunner(agynio.api.runners.v1.RegisterRunnerRequest) returns (agynio.api.runners.v1.RegisterRunnerResponse);
+  rpc GetRunner(agynio.api.runners.v1.GetRunnerRequest) returns (agynio.api.runners.v1.GetRunnerResponse);
+  rpc ListRunners(agynio.api.runners.v1.ListRunnersRequest) returns (agynio.api.runners.v1.ListRunnersResponse);
+  rpc UpdateRunner(agynio.api.runners.v1.UpdateRunnerRequest) returns (agynio.api.runners.v1.UpdateRunnerResponse);
+  rpc DeleteRunner(agynio.api.runners.v1.DeleteRunnerRequest) returns (agynio.api.runners.v1.DeleteRunnerResponse);
+  rpc EnrollRunner(agynio.api.runners.v1.EnrollRunnerRequest) returns (agynio.api.runners.v1.EnrollRunnerResponse);
+
+  // --- Workloads ---
+  rpc ListWorkloads(agynio.api.runners.v1.ListWorkloadsRequest) returns (agynio.api.runners.v1.ListWorkloadsResponse);
+  rpc ListWorkloadsByThread(agynio.api.runners.v1.ListWorkloadsByThreadRequest) returns (agynio.api.runners.v1.ListWorkloadsByThreadResponse);
+  rpc GetWorkload(agynio.api.runners.v1.GetWorkloadRequest) returns (agynio.api.runners.v1.GetWorkloadResponse);
+  rpc TouchWorkload(agynio.api.runners.v1.TouchWorkloadRequest) returns (agynio.api.runners.v1.TouchWorkloadResponse);
+  rpc StreamWorkloadLogs(agynio.api.runner.v1.StreamWorkloadLogsRequest) returns (stream agynio.api.runner.v1.StreamWorkloadLogsResponse);
+
+  // --- Volumes ---
+  rpc GetVolume(agynio.api.runners.v1.GetVolumeRequest) returns (agynio.api.runners.v1.GetVolumeResponse);
+  rpc ListVolumes(agynio.api.runners.v1.ListVolumesRequest) returns (agynio.api.runners.v1.ListVolumesResponse);
+  rpc ListVolumesByThread(agynio.api.runners.v1.ListVolumesByThreadRequest) returns (agynio.api.runners.v1.ListVolumesByThreadResponse);
+}

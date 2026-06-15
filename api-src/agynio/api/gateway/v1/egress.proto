@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/egress/v1/egress.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service EgressRulesGateway {
+  // --- Egress Rules ---
+  rpc CreateEgressRule(agynio.api.egress.v1.CreateEgressRuleRequest) returns (agynio.api.egress.v1.CreateEgressRuleResponse);
+  rpc GetEgressRule(agynio.api.egress.v1.GetEgressRuleRequest) returns (agynio.api.egress.v1.GetEgressRuleResponse);
+  rpc ListEgressRules(agynio.api.egress.v1.ListEgressRulesRequest) returns (agynio.api.egress.v1.ListEgressRulesResponse);
+  rpc UpdateEgressRule(agynio.api.egress.v1.UpdateEgressRuleRequest) returns (agynio.api.egress.v1.UpdateEgressRuleResponse);
+  rpc DeleteEgressRule(agynio.api.egress.v1.DeleteEgressRuleRequest) returns (agynio.api.egress.v1.DeleteEgressRuleResponse);
+
+  // --- Egress Rule Attachments ---
+  rpc CreateEgressRuleAttachment(agynio.api.egress.v1.CreateEgressRuleAttachmentRequest) returns (agynio.api.egress.v1.CreateEgressRuleAttachmentResponse);
+  rpc DeleteEgressRuleAttachment(agynio.api.egress.v1.DeleteEgressRuleAttachmentRequest) returns (agynio.api.egress.v1.DeleteEgressRuleAttachmentResponse);
+  rpc ListEgressRuleAttachments(agynio.api.egress.v1.ListEgressRuleAttachmentsRequest) returns (agynio.api.egress.v1.ListEgressRuleAttachmentsResponse);
+}

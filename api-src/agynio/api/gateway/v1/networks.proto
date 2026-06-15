@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package agynio.api.gateway.v1;
+
+import "agynio/api/networks/v1/networks.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/gateway/v1;gatewayv1";
+
+service NetworksGateway {
+  // --- Networks ---
+  rpc CreateNetwork(agynio.api.networks.v1.CreateNetworkRequest) returns (agynio.api.networks.v1.CreateNetworkResponse);
+  rpc GetNetwork(agynio.api.networks.v1.GetNetworkRequest) returns (agynio.api.networks.v1.GetNetworkResponse);
+  rpc ListNetworks(agynio.api.networks.v1.ListNetworksRequest) returns (agynio.api.networks.v1.ListNetworksResponse);
+  rpc UpdateNetwork(agynio.api.networks.v1.UpdateNetworkRequest) returns (agynio.api.networks.v1.UpdateNetworkResponse);
+  rpc DeleteNetwork(agynio.api.networks.v1.DeleteNetworkRequest) returns (agynio.api.networks.v1.DeleteNetworkResponse);
+
+  // --- Tunnel Credentials ---
+  rpc CreateTunnelCredential(agynio.api.networks.v1.CreateTunnelCredentialRequest) returns (agynio.api.networks.v1.CreateTunnelCredentialResponse);
+  rpc GetTunnelCredential(agynio.api.networks.v1.GetTunnelCredentialRequest) returns (agynio.api.networks.v1.GetTunnelCredentialResponse);
+  rpc ListTunnelCredentials(agynio.api.networks.v1.ListTunnelCredentialsRequest) returns (agynio.api.networks.v1.ListTunnelCredentialsResponse);
+  rpc DeleteTunnelCredential(agynio.api.networks.v1.DeleteTunnelCredentialRequest) returns (agynio.api.networks.v1.DeleteTunnelCredentialResponse);
+
+  // --- Private Resources ---
+  rpc CreatePrivateResource(agynio.api.networks.v1.CreatePrivateResourceRequest) returns (agynio.api.networks.v1.CreatePrivateResourceResponse);
+  rpc GetPrivateResource(agynio.api.networks.v1.GetPrivateResourceRequest) returns (agynio.api.networks.v1.GetPrivateResourceResponse);
+  rpc ListPrivateResources(agynio.api.networks.v1.ListPrivateResourcesRequest) returns (agynio.api.networks.v1.ListPrivateResourcesResponse);
+  rpc UpdatePrivateResource(agynio.api.networks.v1.UpdatePrivateResourceRequest) returns (agynio.api.networks.v1.UpdatePrivateResourceResponse);
+  rpc DeletePrivateResource(agynio.api.networks.v1.DeletePrivateResourceRequest) returns (agynio.api.networks.v1.DeletePrivateResourceResponse);
+
+  // --- Private Resource Access ---
+  rpc CreatePrivateResourceAccess(agynio.api.networks.v1.CreatePrivateResourceAccessRequest) returns (agynio.api.networks.v1.CreatePrivateResourceAccessResponse);
+  rpc DeletePrivateResourceAccess(agynio.api.networks.v1.DeletePrivateResourceAccessRequest) returns (agynio.api.networks.v1.DeletePrivateResourceAccessResponse);
+  rpc ListPrivateResourceAccess(agynio.api.networks.v1.ListPrivateResourceAccessRequest) returns (agynio.api.networks.v1.ListPrivateResourceAccessResponse);
+}

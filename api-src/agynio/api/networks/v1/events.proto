@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package agynio.api.networks.v1;
+
+import "agynio/api/networks/v1/networks.proto";
+
+option go_package = "github.com/agynio/api/gen/agynio/api/networks/v1;networksv1";
+
+message TunnelOnlineEvent {
+  string tunnel_credential_id = 1;
+  string network_id = 2;
+}
+
+message TunnelOfflineEvent {
+  string tunnel_credential_id = 1;
+  string network_id = 2;
+}
+
+message PrivateResourceAccessGrantedEvent {
+  string private_resource_access_id = 1;
+  string private_resource_id = 2;
+  PrivateResourceAccessPrincipalType principal_type = 3;
+  string principal_id = 4;
+}
+
+message PrivateResourceAccessRevokedEvent {
+  string private_resource_access_id = 1;
+  string private_resource_id = 2;
+  PrivateResourceAccessPrincipalType principal_type = 3;
+  string principal_id = 4;
+}
