@@ -30,8 +30,8 @@ jobs:
 
       - name: Generate gRPC stubs
         run: |
-          buf generate buf.build/agynio/api \
-            --path agynio/api/ziti_management/v1
+          buf generate . \
+            --path third_party/agynio-api/proto/agynio/api/ziti_management/v1
 
       - name: Go vet
         run: go vet ./...
