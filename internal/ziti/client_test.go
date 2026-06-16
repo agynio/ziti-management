@@ -477,7 +477,7 @@ func TestListServicesConvertsFilterPaginationAndResponse(t *testing.T) {
 	roles := rest_model.Attributes{"egress-services"}
 	fake := &fakeServiceService{
 		listServicesFunc: func(params *service.ListServicesParams) (*service.ListServicesOK, error) {
-			expected := `name = "api.github.com" and roleAttributes contains "egress-services"`
+			expected := `name = "api.github.com"`
 			if params == nil || params.Filter == nil || *params.Filter != expected {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
@@ -527,7 +527,7 @@ func TestListServicesPagesUntilEnoughPrefixMatches(t *testing.T) {
 			if params == nil || params.Limit == nil || *params.Limit != 2 || params.Offset == nil {
 				t.Fatalf("unexpected pagination: %#v", params)
 			}
-			if params.Filter == nil || *params.Filter != `roleAttributes contains "egress-services"` {
+			if params.Filter != nil {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
 			calls++
@@ -594,7 +594,7 @@ func TestListServicesKeepsControllerLimitWhileScanningPrefixMatches(t *testing.T
 			if params == nil || params.Limit == nil || *params.Limit != 3 || params.Offset == nil {
 				t.Fatalf("unexpected pagination: %#v", params)
 			}
-			if params.Filter == nil || *params.Filter != `roleAttributes contains "egress-services"` {
+			if params.Filter != nil {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
 			calls++
@@ -666,7 +666,7 @@ func TestListServicesTokenResumesInsideFetchedPage(t *testing.T) {
 			if params == nil || params.Limit == nil || *params.Limit != 2 || params.Offset == nil || *params.Offset != 0 {
 				t.Fatalf("unexpected pagination: %#v", params)
 			}
-			if params.Filter == nil || *params.Filter != `roleAttributes contains "egress-services"` {
+			if params.Filter != nil {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
 			return listServicesResponse([]*rest_model.ServiceDetail{{

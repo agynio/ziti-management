@@ -318,12 +318,9 @@ func tagFilter(tags map[string]string) string {
 }
 
 func serviceFilter(filter ServiceListFilter) string {
-	filters := make([]string, 0, 2+len(filter.RoleAttributes))
+	filters := make([]string, 0, 1)
 	if filter.Name != "" {
 		filters = append(filters, fmt.Sprintf("name = %s", strconv.Quote(filter.Name)))
-	}
-	for _, roleAttribute := range filter.RoleAttributes {
-		filters = append(filters, fmt.Sprintf("roleAttributes contains %s", strconv.Quote(roleAttribute)))
 	}
 	return strings.Join(filters, " and ")
 }
@@ -775,7 +772,21 @@ func serviceMatchesFilter(service OpenZitiService, filter ServiceListFilter) boo
 	if filter.NamePrefix != "" && !strings.HasPrefix(service.Name, filter.NamePrefix) {
 		return false
 	}
+	for _, roleAttribute := range filter.RoleAttributes {
+		if !containsString(service.RoleAttributes, roleAttribute) {
+			return false
+		}
+	}
 	return true
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) CreateServicePolicy(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string) (string, error) {
