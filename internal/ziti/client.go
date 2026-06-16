@@ -369,6 +369,13 @@ func nextPageToken(meta *rest_model.Meta) string {
 	return strconv.FormatInt(nextOffset, 10)
 }
 
+func pageTokenFromOffset(offset, total int64) string {
+	if offset >= total {
+		return ""
+	}
+	return strconv.FormatInt(offset, 10)
+}
+
 func nextPageOffset(meta *rest_model.Meta) (int64, bool) {
 	if meta == nil || meta.Pagination == nil || meta.Pagination.Offset == nil || meta.Pagination.Limit == nil || meta.Pagination.TotalCount == nil {
 		return 0, false
@@ -378,6 +385,13 @@ func nextPageOffset(meta *rest_model.Meta) (int64, bool) {
 		return 0, false
 	}
 	return nextOffset, true
+}
+
+func totalCount(meta *rest_model.Meta) int64 {
+	if meta == nil || meta.Pagination == nil || meta.Pagination.TotalCount == nil {
+		return 0
+	}
+	return *meta.Pagination.TotalCount
 }
 
 func (c *Client) deleteIdentityByExternalID(ctx context.Context, externalID string) error {
@@ -738,14 +752,15 @@ func (c *Client) ListServices(ctx context.Context, filter ServiceListFilter, pag
 		if listed.Payload == nil {
 			return ListResult[OpenZitiService]{}, errors.New("list ziti services response missing payload")
 		}
-		for _, serviceDetail := range listed.Payload.Data {
+		for index, serviceDetail := range listed.Payload.Data {
 			item := toOpenZitiService(serviceDetail)
 			if !serviceMatchesFilter(item, filter) {
 				continue
 			}
 			items = append(items, item)
 			if int64(len(items)) == limit {
-				return ListResult[OpenZitiService]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+				nextOffset := currentOffset + int64(index) + 1
+				return ListResult[OpenZitiService]{Items: items, NextPageToken: pageTokenFromOffset(nextOffset, totalCount(listed.Payload.Meta))}, nil
 			}
 		}
 		nextOffset, ok := nextPageOffset(listed.Payload.Meta)
@@ -844,14 +859,15 @@ func (c *Client) ListServicePolicies(ctx context.Context, filter ServicePolicyLi
 		if listed.Payload == nil {
 			return ListResult[OpenZitiServicePolicy]{}, errors.New("list ziti service policies response missing payload")
 		}
-		for _, policyDetail := range listed.Payload.Data {
+		for index, policyDetail := range listed.Payload.Data {
 			item := toOpenZitiServicePolicy(policyDetail)
 			if !servicePolicyMatchesFilter(item, filter) {
 				continue
 			}
 			items = append(items, item)
 			if int64(len(items)) == limit {
-				return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+				nextOffset := currentOffset + int64(index) + 1
+				return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: pageTokenFromOffset(nextOffset, totalCount(listed.Payload.Meta))}, nil
 			}
 		}
 		nextOffset, ok := nextPageOffset(listed.Payload.Meta)
