@@ -669,6 +669,11 @@ func TestUpdateServicePatchesConfigsAndTags(t *testing.T) {
 			if params == nil || params.Config == nil {
 				t.Fatalf("expected config create")
 			}
+			data, ok := params.Config.Data.(map[string]any)
+			if !ok {
+				t.Fatalf("expected config data map, got %#v", params.Config.Data)
+			}
+			assertHostV1ConfigIncludesConcreteAddressPort(t, data, "127.0.0.1", 8080)
 			assertTags(t, params.Config.Tags, map[string]string{"owner": "networks"})
 			return createConfigResponse("host-config"), nil
 		},
@@ -681,6 +686,78 @@ func TestUpdateServicePatchesConfigsAndTags(t *testing.T) {
 	}
 	if call != 2 || updated.ID != serviceID {
 		t.Fatalf("unexpected update result: call=%d updated=%#v", call, updated)
+	}
+}
+
+func TestUpdateServiceForwardingHostConfigOmitsUnsetAddressAndPort(t *testing.T) {
+	ctx := context.Background()
+	serviceID := "service-id"
+	serviceName := "service-name"
+	roles := rest_model.Attributes{"role-one"}
+	existingConfigID := "host-config"
+	hostV1TypeID := hostV1ConfigTypeID
+	fakeService := &fakeServiceService{
+		detailServiceFunc: func(params *service.DetailServiceParams) (*service.DetailServiceOK, error) {
+			return &service.DetailServiceOK{Payload: &rest_model.DetailServiceEnvelope{Data: &rest_model.ServiceDetail{
+				BaseEntity:     rest_model.BaseEntity{ID: &serviceID},
+				Name:           &serviceName,
+				RoleAttributes: &roles,
+				Configs:        []string{existingConfigID},
+			}}}, nil
+		},
+		listConfigFunc: func(params *service.ListServiceConfigParams) (*service.ListServiceConfigOK, error) {
+			return listConfigsResponse([]*rest_model.ConfigDetail{{
+				BaseEntity:   rest_model.BaseEntity{ID: &existingConfigID},
+				ConfigTypeID: &hostV1TypeID,
+			}}, 100, 0, 1), nil
+		},
+		patchServiceFunc: func(params *service.PatchServiceParams) (*service.PatchServiceOK, error) {
+			if params == nil || params.Service == nil {
+				t.Fatalf("expected patch service")
+			}
+			if !reflect.DeepEqual(params.Service.Configs, []string{existingConfigID}) {
+				t.Fatalf("unexpected configs: %#v", params.Service.Configs)
+			}
+			return &service.PatchServiceOK{}, nil
+		},
+	}
+	fakeConfig := &fakeConfigService{
+		patchConfigFunc: func(params *config.PatchConfigParams) (*config.PatchConfigOK, error) {
+			if params == nil || params.Config == nil {
+				t.Fatalf("expected config patch")
+			}
+			data, ok := params.Config.Data.(map[string]any)
+			if !ok {
+				t.Fatalf("expected config data map, got %#v", params.Config.Data)
+			}
+			assertHostV1ConfigData(t, data, map[string]any{
+				"protocol":         "tcp",
+				"forwardProtocol":  true,
+				"forwardAddress":   true,
+				"forwardPort":      true,
+				"allowedProtocols": []string{"tcp"},
+				"allowedAddresses": []string{"0.0.0.0/0"},
+				"allowedPortRanges": []map[string]any{{
+					"low":  int32(1),
+					"high": int32(65535),
+				}},
+			})
+			return &config.PatchConfigOK{}, nil
+		},
+	}
+	host := &HostV1ConfigData{
+		Protocol:          "tcp",
+		ForwardProtocol:   true,
+		ForwardAddress:    true,
+		ForwardPort:       true,
+		AllowedProtocols:  []string{"tcp"},
+		AllowedAddresses:  []string{"0.0.0.0/0"},
+		AllowedPortRanges: []PortRangeData{{Low: 1, High: 65535}},
+	}
+
+	client := &Client{service: fakeService, config: fakeConfig}
+	if _, err := client.UpdateService(ctx, serviceID, host, nil, nil, false); err != nil {
+		t.Fatalf("update service: %v", err)
 	}
 }
 
@@ -912,6 +989,52 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 		}
 		if got != serviceID {
 			t.Fatalf("expected service id %q, got %q", serviceID, got)
+		}
+	})
+
+	t.Run("forwarding host config omits unset address and port", func(t *testing.T) {
+		host := &HostV1ConfigData{
+			Protocol:          "tcp",
+			ForwardProtocol:   true,
+			ForwardAddress:    true,
+			ForwardPort:       true,
+			AllowedProtocols:  []string{"tcp"},
+			AllowedAddresses:  []string{"0.0.0.0/0"},
+			AllowedPortRanges: []PortRangeData{{Low: 1, High: 65535}},
+		}
+		fakeConfig := &fakeConfigService{
+			createConfigFunc: func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error) {
+				if params == nil || params.Config == nil {
+					t.Fatalf("expected config create params")
+				}
+				data, ok := params.Config.Data.(map[string]any)
+				if !ok {
+					t.Fatalf("expected config data map, got %#v", params.Config.Data)
+				}
+				assertHostV1ConfigData(t, data, map[string]any{
+					"protocol":         "tcp",
+					"forwardProtocol":  true,
+					"forwardAddress":   true,
+					"forwardPort":      true,
+					"allowedProtocols": []string{"tcp"},
+					"allowedAddresses": []string{"0.0.0.0/0"},
+					"allowedPortRanges": []map[string]any{{
+						"low":  int32(1),
+						"high": int32(65535),
+					}},
+				})
+				return createConfigResponse("host-config"), nil
+			},
+		}
+		fakeService := &fakeServiceService{
+			createServiceFunc: func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error) {
+				return createServiceResponse("service-id"), nil
+			},
+		}
+
+		client := &Client{service: fakeService, config: fakeConfig}
+		if _, err := client.CreateServiceWithConfigs(ctx, "egress-rule", []string{"role"}, host, nil); err != nil {
+			t.Fatalf("create service with configs: %v", err)
 		}
 	})
 
@@ -1165,6 +1288,29 @@ func assertCreateAgentRoleAttributes(t *testing.T, params *identity.CreateIdenti
 	expectedRoleAttributes = append(expectedRoleAttributes, additional...)
 	if !reflect.DeepEqual(*params.Identity.RoleAttributes, expectedRoleAttributes) {
 		t.Fatalf("unexpected role attributes: %#v", params.Identity.RoleAttributes)
+	}
+}
+
+func assertHostV1ConfigData(t *testing.T, actual map[string]any, expected map[string]any) {
+	t.Helper()
+	if _, ok := actual["address"]; ok {
+		t.Fatalf("host.v1 config must not include unset address: %#v", actual)
+	}
+	if _, ok := actual["port"]; ok {
+		t.Fatalf("host.v1 config must not include unset port: %#v", actual)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("unexpected host config data: %#v", actual)
+	}
+}
+
+func assertHostV1ConfigIncludesConcreteAddressPort(t *testing.T, actual map[string]any, address string, port int32) {
+	t.Helper()
+	if got, ok := actual["address"]; !ok || got != address {
+		t.Fatalf("expected address %q, got %#v in %#v", address, got, actual)
+	}
+	if got, ok := actual["port"]; !ok || got != port {
+		t.Fatalf("expected port %d, got %#v in %#v", port, got, actual)
 	}
 }
 
