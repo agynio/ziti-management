@@ -322,9 +322,6 @@ func serviceFilter(filter ServiceListFilter) string {
 	if filter.Name != "" {
 		filters = append(filters, fmt.Sprintf("name = %s", strconv.Quote(filter.Name)))
 	}
-	if filter.NamePrefix != "" {
-		filters = append(filters, fmt.Sprintf("name startsWith %s", strconv.Quote(filter.NamePrefix)))
-	}
 	for _, roleAttribute := range filter.RoleAttributes {
 		filters = append(filters, fmt.Sprintf("roleAttributes contains %s", strconv.Quote(roleAttribute)))
 	}
@@ -332,12 +329,9 @@ func serviceFilter(filter ServiceListFilter) string {
 }
 
 func servicePolicyFilter(filter ServicePolicyListFilter) string {
-	filters := make([]string, 0, 3+len(filter.IdentityRoles)+len(filter.ServiceRoles))
+	filters := make([]string, 0, 2+len(filter.IdentityRoles)+len(filter.ServiceRoles))
 	if filter.Name != "" {
 		filters = append(filters, fmt.Sprintf("name = %s", strconv.Quote(filter.Name)))
-	}
-	if filter.NamePrefix != "" {
-		filters = append(filters, fmt.Sprintf("name startsWith %s", strconv.Quote(filter.NamePrefix)))
 	}
 	if filter.Type != "" {
 		filters = append(filters, fmt.Sprintf("type = %s", strconv.Quote(filter.Type)))
@@ -735,9 +729,20 @@ func (c *Client) ListServices(ctx context.Context, filter ServiceListFilter, pag
 	}
 	items := make([]OpenZitiService, 0, len(listed.Payload.Data))
 	for _, serviceDetail := range listed.Payload.Data {
-		items = append(items, toOpenZitiService(serviceDetail))
+		item := toOpenZitiService(serviceDetail)
+		if !serviceMatchesFilter(item, filter) {
+			continue
+		}
+		items = append(items, item)
 	}
 	return ListResult[OpenZitiService]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+}
+
+func serviceMatchesFilter(service OpenZitiService, filter ServiceListFilter) bool {
+	if filter.NamePrefix != "" && !strings.HasPrefix(service.Name, filter.NamePrefix) {
+		return false
+	}
+	return true
 }
 
 func (c *Client) CreateServicePolicy(ctx context.Context, name, policyType string, identityRoles, serviceRoles []string) (string, error) {
@@ -820,9 +825,20 @@ func (c *Client) ListServicePolicies(ctx context.Context, filter ServicePolicyLi
 	}
 	items := make([]OpenZitiServicePolicy, 0, len(listed.Payload.Data))
 	for _, policyDetail := range listed.Payload.Data {
-		items = append(items, toOpenZitiServicePolicy(policyDetail))
+		item := toOpenZitiServicePolicy(policyDetail)
+		if !servicePolicyMatchesFilter(item, filter) {
+			continue
+		}
+		items = append(items, item)
 	}
 	return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+}
+
+func servicePolicyMatchesFilter(policy OpenZitiServicePolicy, filter ServicePolicyListFilter) bool {
+	if filter.NamePrefix != "" && !strings.HasPrefix(policy.Name, filter.NamePrefix) {
+		return false
+	}
+	return true
 }
 
 func (c *Client) DeleteServicePolicy(ctx context.Context, policyID string) error {

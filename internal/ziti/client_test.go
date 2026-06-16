@@ -477,16 +477,22 @@ func TestListServicesConvertsFilterPaginationAndResponse(t *testing.T) {
 	roles := rest_model.Attributes{"egress-services"}
 	fake := &fakeServiceService{
 		listServicesFunc: func(params *service.ListServicesParams) (*service.ListServicesOK, error) {
-			expected := `name = "api.github.com" and name startsWith "egress-rule-" and roleAttributes contains "egress-services"`
+			expected := `name = "api.github.com" and roleAttributes contains "egress-services"`
 			if params == nil || params.Filter == nil || *params.Filter != expected {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
 			if params.Limit == nil || *params.Limit != 10 || params.Offset == nil || *params.Offset != 20 {
 				t.Fatalf("unexpected pagination: %#v", params)
 			}
+			otherServiceID := "other-id"
+			otherServiceName := "other-service"
 			return listServicesResponse([]*rest_model.ServiceDetail{{
 				BaseEntity:     rest_model.BaseEntity{ID: &serviceID, Tags: tagsFromMap(map[string]string{"owner": "egress"})},
 				Name:           &serviceName,
+				RoleAttributes: &roles,
+			}, {
+				BaseEntity:     rest_model.BaseEntity{ID: &otherServiceID},
+				Name:           &otherServiceName,
 				RoleAttributes: &roles,
 			}}, 10, 20, 31), nil
 		},
@@ -602,16 +608,24 @@ func TestListServicePoliciesConvertsFilterPaginationAndResponse(t *testing.T) {
 	policyType := rest_model.DialBindDial
 	fake := &fakeServicePolicyService{
 		listServicePoliciesFunc: func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error) {
-			expected := `name = "egress-rule-agent" and name startsWith "egress-rule-" and type = "Dial" and identityRoles contains "#agent-1" and serviceRoles contains "-rule-1"`
+			expected := `name = "egress-rule-agent" and type = "Dial" and identityRoles contains "#agent-1" and serviceRoles contains "-rule-1"`
 			if params == nil || params.Filter == nil || *params.Filter != expected {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
 			if params.Limit == nil || *params.Limit != 5 || params.Offset == nil || *params.Offset != 10 {
 				t.Fatalf("unexpected pagination: %#v", params)
 			}
+			otherPolicyID := "other-policy-id"
+			otherPolicyName := "other-policy"
 			return listServicePoliciesResponse([]*rest_model.ServicePolicyDetail{{
 				BaseEntity:    rest_model.BaseEntity{ID: &policyID, Tags: tagsFromMap(map[string]string{"owner": "egress"})},
 				Name:          &policyName,
+				Type:          &policyType,
+				IdentityRoles: rest_model.Roles{"#agent-1"},
+				ServiceRoles:  rest_model.Roles{"-rule-1"},
+			}, {
+				BaseEntity:    rest_model.BaseEntity{ID: &otherPolicyID},
+				Name:          &otherPolicyName,
 				Type:          &policyType,
 				IdentityRoles: rest_model.Roles{"#agent-1"},
 				ServiceRoles:  rest_model.Roles{"-rule-1"},
