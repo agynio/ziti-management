@@ -494,7 +494,7 @@ func TestListServicesConvertsFilterPaginationAndResponse(t *testing.T) {
 				BaseEntity:     rest_model.BaseEntity{ID: &otherServiceID},
 				Name:           &otherServiceName,
 				RoleAttributes: &roles,
-			}}, 10, 20, 31), nil
+			}}, 10, 20, 30), nil
 		},
 	}
 
@@ -507,7 +507,70 @@ func TestListServicesConvertsFilterPaginationAndResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list services: %v", err)
 	}
-	if result.NextPageToken != "30" || len(result.Items) != 1 || result.Items[0].ID != serviceID || result.Items[0].Name != serviceName {
+	if result.NextPageToken != "" || len(result.Items) != 1 || result.Items[0].ID != serviceID || result.Items[0].Name != serviceName {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestListServicesPagesUntilEnoughPrefixMatches(t *testing.T) {
+	ctx := context.Background()
+	firstID := "service-id-1"
+	firstName := "egress-rule-one"
+	secondID := "service-id-2"
+	secondName := "egress-rule-two"
+	otherID := "other-id"
+	otherName := "other-service"
+	roles := rest_model.Attributes{"egress-services"}
+	calls := 0
+	fake := &fakeServiceService{
+		listServicesFunc: func(params *service.ListServicesParams) (*service.ListServicesOK, error) {
+			if params == nil || params.Limit == nil || *params.Limit != 2 || params.Offset == nil {
+				t.Fatalf("unexpected pagination: %#v", params)
+			}
+			if params.Filter == nil || *params.Filter != `roleAttributes contains "egress-services"` {
+				t.Fatalf("unexpected filter: %#v", params)
+			}
+			calls++
+			switch *params.Offset {
+			case 0:
+				return listServicesResponse([]*rest_model.ServiceDetail{{
+					BaseEntity:     rest_model.BaseEntity{ID: &otherID},
+					Name:           &otherName,
+					RoleAttributes: &roles,
+				}, {
+					BaseEntity:     rest_model.BaseEntity{ID: &otherID},
+					Name:           &otherName,
+					RoleAttributes: &roles,
+				}}, 2, 0, 5), nil
+			case 2:
+				return listServicesResponse([]*rest_model.ServiceDetail{{
+					BaseEntity:     rest_model.BaseEntity{ID: &firstID},
+					Name:           &firstName,
+					RoleAttributes: &roles,
+				}, {
+					BaseEntity:     rest_model.BaseEntity{ID: &secondID},
+					Name:           &secondName,
+					RoleAttributes: &roles,
+				}}, 2, 2, 5), nil
+			default:
+				t.Fatalf("unexpected offset: %d", *params.Offset)
+				return nil, nil
+			}
+		},
+	}
+
+	client := &Client{service: fake}
+	result, err := client.ListServices(ctx, ServiceListFilter{
+		NamePrefix:     "egress-rule-",
+		RoleAttributes: []string{"egress-services"},
+	}, 2, "")
+	if err != nil {
+		t.Fatalf("list services: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", calls)
+	}
+	if result.NextPageToken != "4" || len(result.Items) != 2 || result.Items[0].ID != firstID || result.Items[1].ID != secondID {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 }
@@ -629,7 +692,7 @@ func TestListServicePoliciesConvertsFilterPaginationAndResponse(t *testing.T) {
 				Type:          &policyType,
 				IdentityRoles: rest_model.Roles{"#agent-1"},
 				ServiceRoles:  rest_model.Roles{"-rule-1"},
-			}}, 5, 10, 20), nil
+			}}, 5, 10, 15), nil
 		},
 	}
 
@@ -644,7 +707,75 @@ func TestListServicePoliciesConvertsFilterPaginationAndResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list service policies: %v", err)
 	}
-	if result.NextPageToken != "15" || len(result.Items) != 1 || result.Items[0].ID != policyID || result.Items[0].Type != "Dial" {
+	if result.NextPageToken != "" || len(result.Items) != 1 || result.Items[0].ID != policyID || result.Items[0].Type != "Dial" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestListServicePoliciesPagesUntilEnoughPrefixMatches(t *testing.T) {
+	ctx := context.Background()
+	firstID := "policy-id-1"
+	firstName := "egress-rule-one"
+	secondID := "policy-id-2"
+	secondName := "egress-rule-two"
+	otherID := "other-policy-id"
+	otherName := "other-policy"
+	policyType := rest_model.DialBindDial
+	calls := 0
+	fake := &fakeServicePolicyService{
+		listServicePoliciesFunc: func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error) {
+			if params == nil || params.Limit == nil || *params.Limit != 2 || params.Offset == nil {
+				t.Fatalf("unexpected pagination: %#v", params)
+			}
+			if params.Filter == nil || *params.Filter != `type = "Dial" and identityRoles contains "#agent-1"` {
+				t.Fatalf("unexpected filter: %#v", params)
+			}
+			calls++
+			switch *params.Offset {
+			case 0:
+				return listServicePoliciesResponse([]*rest_model.ServicePolicyDetail{{
+					BaseEntity:    rest_model.BaseEntity{ID: &otherID},
+					Name:          &otherName,
+					Type:          &policyType,
+					IdentityRoles: rest_model.Roles{"#agent-1"},
+				}, {
+					BaseEntity:    rest_model.BaseEntity{ID: &otherID},
+					Name:          &otherName,
+					Type:          &policyType,
+					IdentityRoles: rest_model.Roles{"#agent-1"},
+				}}, 2, 0, 5), nil
+			case 2:
+				return listServicePoliciesResponse([]*rest_model.ServicePolicyDetail{{
+					BaseEntity:    rest_model.BaseEntity{ID: &firstID},
+					Name:          &firstName,
+					Type:          &policyType,
+					IdentityRoles: rest_model.Roles{"#agent-1"},
+				}, {
+					BaseEntity:    rest_model.BaseEntity{ID: &secondID},
+					Name:          &secondName,
+					Type:          &policyType,
+					IdentityRoles: rest_model.Roles{"#agent-1"},
+				}}, 2, 2, 5), nil
+			default:
+				t.Fatalf("unexpected offset: %d", *params.Offset)
+				return nil, nil
+			}
+		},
+	}
+
+	client := &Client{servicePolicy: fake}
+	result, err := client.ListServicePolicies(ctx, ServicePolicyListFilter{
+		NamePrefix:    "egress-rule-",
+		Type:          "Dial",
+		IdentityRoles: []string{"#agent-1"},
+	}, 2, "")
+	if err != nil {
+		t.Fatalf("list service policies: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", calls)
+	}
+	if result.NextPageToken != "4" || len(result.Items) != 2 || result.Items[0].ID != firstID || result.Items[1].ID != secondID {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 }

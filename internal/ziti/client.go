@@ -362,14 +362,22 @@ func listPagination(pageSize int32, pageToken string) (int64, int64, error) {
 }
 
 func nextPageToken(meta *rest_model.Meta) string {
-	if meta == nil || meta.Pagination == nil || meta.Pagination.Offset == nil || meta.Pagination.Limit == nil || meta.Pagination.TotalCount == nil {
-		return ""
-	}
-	nextOffset := *meta.Pagination.Offset + *meta.Pagination.Limit
-	if nextOffset >= *meta.Pagination.TotalCount {
+	nextOffset, ok := nextPageOffset(meta)
+	if !ok {
 		return ""
 	}
 	return strconv.FormatInt(nextOffset, 10)
+}
+
+func nextPageOffset(meta *rest_model.Meta) (int64, bool) {
+	if meta == nil || meta.Pagination == nil || meta.Pagination.Offset == nil || meta.Pagination.Limit == nil || meta.Pagination.TotalCount == nil {
+		return 0, false
+	}
+	nextOffset := *meta.Pagination.Offset + *meta.Pagination.Limit
+	if nextOffset >= *meta.Pagination.TotalCount {
+		return 0, false
+	}
+	return nextOffset, true
 }
 
 func (c *Client) deleteIdentityByExternalID(ctx context.Context, externalID string) error {
@@ -708,34 +716,45 @@ func (c *Client) ListServices(ctx context.Context, filter ServiceListFilter, pag
 		return ListResult[OpenZitiService]{}, err
 	}
 	compiledFilter := serviceFilter(filter)
-	params := service.NewListServicesParamsWithContext(ctx)
-	params.Limit = &limit
-	params.Offset = &offset
-	if compiledFilter != "" {
-		params.Filter = &compiledFilter
-	}
-	var listed *service.ListServicesOK
-	err = c.withReauth(func() error {
-		var callErr error
-		serviceClient := c.serviceClient()
-		listed, callErr = serviceClient.ListServices(params, nil)
-		return callErr
-	})
-	if err != nil {
-		return ListResult[OpenZitiService]{}, fmt.Errorf("list ziti services: %w", err)
-	}
-	if listed.Payload == nil {
-		return ListResult[OpenZitiService]{}, errors.New("list ziti services response missing payload")
-	}
-	items := make([]OpenZitiService, 0, len(listed.Payload.Data))
-	for _, serviceDetail := range listed.Payload.Data {
-		item := toOpenZitiService(serviceDetail)
-		if !serviceMatchesFilter(item, filter) {
-			continue
+	items := make([]OpenZitiService, 0, limit)
+	currentOffset := offset
+	for {
+		remaining := limit - int64(len(items))
+		params := service.NewListServicesParamsWithContext(ctx)
+		params.Limit = &remaining
+		params.Offset = &currentOffset
+		if compiledFilter != "" {
+			params.Filter = &compiledFilter
 		}
-		items = append(items, item)
+		var listed *service.ListServicesOK
+		err = c.withReauth(func() error {
+			var callErr error
+			serviceClient := c.serviceClient()
+			listed, callErr = serviceClient.ListServices(params, nil)
+			return callErr
+		})
+		if err != nil {
+			return ListResult[OpenZitiService]{}, fmt.Errorf("list ziti services: %w", err)
+		}
+		if listed.Payload == nil {
+			return ListResult[OpenZitiService]{}, errors.New("list ziti services response missing payload")
+		}
+		for _, serviceDetail := range listed.Payload.Data {
+			item := toOpenZitiService(serviceDetail)
+			if !serviceMatchesFilter(item, filter) {
+				continue
+			}
+			items = append(items, item)
+			if int64(len(items)) == limit {
+				return ListResult[OpenZitiService]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+			}
+		}
+		nextOffset, ok := nextPageOffset(listed.Payload.Meta)
+		if !ok {
+			return ListResult[OpenZitiService]{Items: items}, nil
+		}
+		currentOffset = nextOffset
 	}
-	return ListResult[OpenZitiService]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
 }
 
 func serviceMatchesFilter(service OpenZitiService, filter ServiceListFilter) bool {
@@ -804,34 +823,45 @@ func (c *Client) ListServicePolicies(ctx context.Context, filter ServicePolicyLi
 		return ListResult[OpenZitiServicePolicy]{}, err
 	}
 	compiledFilter := servicePolicyFilter(filter)
-	params := service_policy.NewListServicePoliciesParamsWithContext(ctx)
-	params.Limit = &limit
-	params.Offset = &offset
-	if compiledFilter != "" {
-		params.Filter = &compiledFilter
-	}
-	var listed *service_policy.ListServicePoliciesOK
-	err = c.withReauth(func() error {
-		var callErr error
-		servicePolicyClient := c.servicePolicyClient()
-		listed, callErr = servicePolicyClient.ListServicePolicies(params, nil)
-		return callErr
-	})
-	if err != nil {
-		return ListResult[OpenZitiServicePolicy]{}, fmt.Errorf("list ziti service policies: %w", err)
-	}
-	if listed.Payload == nil {
-		return ListResult[OpenZitiServicePolicy]{}, errors.New("list ziti service policies response missing payload")
-	}
-	items := make([]OpenZitiServicePolicy, 0, len(listed.Payload.Data))
-	for _, policyDetail := range listed.Payload.Data {
-		item := toOpenZitiServicePolicy(policyDetail)
-		if !servicePolicyMatchesFilter(item, filter) {
-			continue
+	items := make([]OpenZitiServicePolicy, 0, limit)
+	currentOffset := offset
+	for {
+		remaining := limit - int64(len(items))
+		params := service_policy.NewListServicePoliciesParamsWithContext(ctx)
+		params.Limit = &remaining
+		params.Offset = &currentOffset
+		if compiledFilter != "" {
+			params.Filter = &compiledFilter
 		}
-		items = append(items, item)
+		var listed *service_policy.ListServicePoliciesOK
+		err = c.withReauth(func() error {
+			var callErr error
+			servicePolicyClient := c.servicePolicyClient()
+			listed, callErr = servicePolicyClient.ListServicePolicies(params, nil)
+			return callErr
+		})
+		if err != nil {
+			return ListResult[OpenZitiServicePolicy]{}, fmt.Errorf("list ziti service policies: %w", err)
+		}
+		if listed.Payload == nil {
+			return ListResult[OpenZitiServicePolicy]{}, errors.New("list ziti service policies response missing payload")
+		}
+		for _, policyDetail := range listed.Payload.Data {
+			item := toOpenZitiServicePolicy(policyDetail)
+			if !servicePolicyMatchesFilter(item, filter) {
+				continue
+			}
+			items = append(items, item)
+			if int64(len(items)) == limit {
+				return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
+			}
+		}
+		nextOffset, ok := nextPageOffset(listed.Payload.Meta)
+		if !ok {
+			return ListResult[OpenZitiServicePolicy]{Items: items}, nil
+		}
+		currentOffset = nextOffset
 	}
-	return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
 }
 
 func servicePolicyMatchesFilter(policy OpenZitiServicePolicy, filter ServicePolicyListFilter) bool {
