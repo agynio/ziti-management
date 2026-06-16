@@ -719,9 +719,8 @@ func (c *Client) ListServices(ctx context.Context, filter ServiceListFilter, pag
 	items := make([]OpenZitiService, 0, limit)
 	currentOffset := offset
 	for {
-		remaining := limit - int64(len(items))
 		params := service.NewListServicesParamsWithContext(ctx)
-		params.Limit = &remaining
+		params.Limit = &limit
 		params.Offset = &currentOffset
 		if compiledFilter != "" {
 			params.Filter = &compiledFilter
@@ -826,9 +825,8 @@ func (c *Client) ListServicePolicies(ctx context.Context, filter ServicePolicyLi
 	items := make([]OpenZitiServicePolicy, 0, limit)
 	currentOffset := offset
 	for {
-		remaining := limit - int64(len(items))
 		params := service_policy.NewListServicePoliciesParamsWithContext(ctx)
-		params.Limit = &remaining
+		params.Limit = &limit
 		params.Offset = &currentOffset
 		if compiledFilter != "" {
 			params.Filter = &compiledFilter
