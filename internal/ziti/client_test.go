@@ -512,6 +512,46 @@ func TestListServicesConvertsFilterPaginationAndResponse(t *testing.T) {
 	}
 }
 
+func TestListServicesFiltersRoleAttributesLocally(t *testing.T) {
+	ctx := context.Background()
+	serviceID := "service-id"
+	serviceName := "service-name"
+	otherServiceID := "other-service-id"
+	otherServiceName := "other-service"
+	roles := rest_model.Attributes{"egress-services"}
+	otherRoles := rest_model.Attributes{"other-services"}
+	fake := &fakeServiceService{
+		listServicesFunc: func(params *service.ListServicesParams) (*service.ListServicesOK, error) {
+			if params == nil || params.Limit == nil || *params.Limit != 10 || params.Offset == nil || *params.Offset != 0 {
+				t.Fatalf("unexpected pagination: %#v", params)
+			}
+			if params.Filter != nil {
+				t.Fatalf("unexpected filter: %#v", params)
+			}
+			return listServicesResponse([]*rest_model.ServiceDetail{{
+				BaseEntity:     rest_model.BaseEntity{ID: &serviceID},
+				Name:           &serviceName,
+				RoleAttributes: &roles,
+			}, {
+				BaseEntity:     rest_model.BaseEntity{ID: &otherServiceID},
+				Name:           &otherServiceName,
+				RoleAttributes: &otherRoles,
+			}}, 10, 0, 2), nil
+		},
+	}
+
+	client := &Client{service: fake}
+	result, err := client.ListServices(ctx, ServiceListFilter{
+		RoleAttributes: []string{"egress-services"},
+	}, 10, "")
+	if err != nil {
+		t.Fatalf("list services: %v", err)
+	}
+	if result.NextPageToken != "" || len(result.Items) != 1 || result.Items[0].ID != serviceID {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
 func TestListServicesPagesUntilEnoughPrefixMatches(t *testing.T) {
 	ctx := context.Background()
 	firstID := "service-id-1"
