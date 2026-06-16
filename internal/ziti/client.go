@@ -532,7 +532,17 @@ func (c *Client) CreateServiceWithConfigsAndTags(ctx context.Context, name strin
 
 	configIDs := make([]string, 0, 2)
 	if hostV1 != nil {
-		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), hostV1ConfigData(hostV1), tags)
+		data := hostV1ConfigData(hostV1)
+		if len(hostV1.AllowedProtocols) > 0 {
+			data["allowedProtocols"] = hostV1.AllowedProtocols
+		}
+		if len(hostV1.AllowedAddresses) > 0 {
+			data["allowedAddresses"] = hostV1.AllowedAddresses
+		}
+		if len(hostV1.AllowedPortRanges) > 0 {
+			data["allowedPortRanges"] = portRangeConfigData(hostV1.AllowedPortRanges)
+		}
+		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), data, tags)
 		if err != nil {
 			return "", err
 		}
@@ -559,26 +569,24 @@ func (c *Client) CreateServiceWithConfigsAndTags(ctx context.Context, name strin
 }
 
 func hostV1ConfigData(hostV1 *HostV1ConfigData) map[string]any {
-	data := map[string]any{
-		"protocol":        hostV1.Protocol,
-		"forwardProtocol": hostV1.ForwardProtocol,
-		"forwardAddress":  hostV1.ForwardAddress,
-		"forwardPort":     hostV1.ForwardPort,
+	data := map[string]any{}
+	if !hostV1.ForwardProtocol {
+		data["protocol"] = hostV1.Protocol
 	}
-	if hostV1.Address != "" {
+	if !hostV1.ForwardAddress {
 		data["address"] = hostV1.Address
 	}
-	if hostV1.Port != 0 {
+	if !hostV1.ForwardPort {
 		data["port"] = hostV1.Port
 	}
-	if len(hostV1.AllowedProtocols) > 0 {
-		data["allowedProtocols"] = hostV1.AllowedProtocols
+	if hostV1.ForwardProtocol {
+		data["forwardProtocol"] = true
 	}
-	if len(hostV1.AllowedAddresses) > 0 {
-		data["allowedAddresses"] = hostV1.AllowedAddresses
+	if hostV1.ForwardAddress {
+		data["forwardAddress"] = true
 	}
-	if len(hostV1.AllowedPortRanges) > 0 {
-		data["allowedPortRanges"] = portRangeConfigData(hostV1.AllowedPortRanges)
+	if hostV1.ForwardPort {
+		data["forwardPort"] = true
 	}
 	return data
 }
@@ -1057,7 +1065,17 @@ func (c *Client) UpdateService(ctx context.Context, serviceID string, hostV1 *Ho
 	}
 	configIDs := append([]string(nil), detail.Configs...)
 	if hostV1 != nil {
-		configID, err := c.upsertServiceConfig(ctx, serviceID, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", *detail.Name), hostV1ConfigData(hostV1), tags, updateTags)
+		data := hostV1ConfigData(hostV1)
+		if len(hostV1.AllowedProtocols) > 0 {
+			data["allowedProtocols"] = hostV1.AllowedProtocols
+		}
+		if len(hostV1.AllowedAddresses) > 0 {
+			data["allowedAddresses"] = hostV1.AllowedAddresses
+		}
+		if len(hostV1.AllowedPortRanges) > 0 {
+			data["allowedPortRanges"] = portRangeConfigData(hostV1.AllowedPortRanges)
+		}
+		configID, err := c.upsertServiceConfig(ctx, serviceID, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", *detail.Name), data, tags, updateTags)
 		if err != nil {
 			return OpenZitiService{}, err
 		}
