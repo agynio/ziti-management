@@ -838,7 +838,7 @@ func TestListServicePoliciesConvertsFilterPaginationAndResponse(t *testing.T) {
 	policyType := rest_model.DialBindDial
 	fake := &fakeServicePolicyService{
 		listServicePoliciesFunc: func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error) {
-			expected := `name = "egress-rule-agent" and type = "Dial" and identityRoles contains "#agent-1" and serviceRoles contains "-rule-1"`
+			expected := `name = "egress-rule-agent"`
 			if params == nil || params.Filter == nil || *params.Filter != expected {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
@@ -879,6 +879,52 @@ func TestListServicePoliciesConvertsFilterPaginationAndResponse(t *testing.T) {
 	}
 }
 
+func TestListServicePoliciesFiltersSetFieldsLocally(t *testing.T) {
+	ctx := context.Background()
+	policyID := "policy-id"
+	policyName := "policy-name"
+	otherPolicyID := "other-policy-id"
+	otherPolicyName := "other-policy"
+	bindType := rest_model.DialBindBind
+	dialType := rest_model.DialBindDial
+	fake := &fakeServicePolicyService{
+		listServicePoliciesFunc: func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error) {
+			if params == nil || params.Limit == nil || *params.Limit != 10 || params.Offset == nil || *params.Offset != 0 {
+				t.Fatalf("unexpected pagination: %#v", params)
+			}
+			if params.Filter != nil {
+				t.Fatalf("unexpected filter: %#v", params)
+			}
+			return listServicePoliciesResponse([]*rest_model.ServicePolicyDetail{{
+				BaseEntity:    rest_model.BaseEntity{ID: &policyID},
+				Name:          &policyName,
+				Type:          &dialType,
+				IdentityRoles: rest_model.Roles{"#agent-1"},
+				ServiceRoles:  rest_model.Roles{"-rule-1"},
+			}, {
+				BaseEntity:    rest_model.BaseEntity{ID: &otherPolicyID},
+				Name:          &otherPolicyName,
+				Type:          &bindType,
+				IdentityRoles: rest_model.Roles{"#agent-2"},
+				ServiceRoles:  rest_model.Roles{"-rule-2"},
+			}}, 10, 0, 2), nil
+		},
+	}
+
+	client := &Client{servicePolicy: fake}
+	result, err := client.ListServicePolicies(ctx, ServicePolicyListFilter{
+		Type:          "Dial",
+		IdentityRoles: []string{"#agent-1"},
+		ServiceRoles:  []string{"-rule-1"},
+	}, 10, "")
+	if err != nil {
+		t.Fatalf("list service policies: %v", err)
+	}
+	if result.NextPageToken != "" || len(result.Items) != 1 || result.Items[0].ID != policyID {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
 func TestListServicePoliciesPagesUntilEnoughPrefixMatches(t *testing.T) {
 	ctx := context.Background()
 	firstID := "policy-id-1"
@@ -894,7 +940,7 @@ func TestListServicePoliciesPagesUntilEnoughPrefixMatches(t *testing.T) {
 			if params == nil || params.Limit == nil || *params.Limit != 2 || params.Offset == nil {
 				t.Fatalf("unexpected pagination: %#v", params)
 			}
-			if params.Filter == nil || *params.Filter != `type = "Dial" and identityRoles contains "#agent-1"` {
+			if params.Filter != nil {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
 			calls++
@@ -966,7 +1012,7 @@ func TestListServicePoliciesKeepsControllerLimitWhileScanningPrefixMatches(t *te
 			if params == nil || params.Limit == nil || *params.Limit != 3 || params.Offset == nil {
 				t.Fatalf("unexpected pagination: %#v", params)
 			}
-			if params.Filter == nil || *params.Filter != `type = "Dial" and identityRoles contains "#agent-1"` {
+			if params.Filter != nil {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
 			calls++
@@ -1045,7 +1091,7 @@ func TestListServicePoliciesTokenResumesInsideFetchedPage(t *testing.T) {
 			if params == nil || params.Limit == nil || *params.Limit != 2 || params.Offset == nil || *params.Offset != 0 {
 				t.Fatalf("unexpected pagination: %#v", params)
 			}
-			if params.Filter == nil || *params.Filter != `type = "Dial" and identityRoles contains "#agent-1"` {
+			if params.Filter != nil {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
 			return listServicePoliciesResponse([]*rest_model.ServicePolicyDetail{{
