@@ -326,18 +326,9 @@ func serviceFilter(filter ServiceListFilter) string {
 }
 
 func servicePolicyFilter(filter ServicePolicyListFilter) string {
-	filters := make([]string, 0, 2+len(filter.IdentityRoles)+len(filter.ServiceRoles))
+	filters := make([]string, 0, 1)
 	if filter.Name != "" {
 		filters = append(filters, fmt.Sprintf("name = %s", strconv.Quote(filter.Name)))
-	}
-	if filter.Type != "" {
-		filters = append(filters, fmt.Sprintf("type = %s", strconv.Quote(filter.Type)))
-	}
-	for _, identityRole := range filter.IdentityRoles {
-		filters = append(filters, fmt.Sprintf("identityRoles contains %s", strconv.Quote(identityRole)))
-	}
-	for _, serviceRole := range filter.ServiceRoles {
-		filters = append(filters, fmt.Sprintf("serviceRoles contains %s", strconv.Quote(serviceRole)))
 	}
 	return strings.Join(filters, " and ")
 }
@@ -892,6 +883,19 @@ func (c *Client) ListServicePolicies(ctx context.Context, filter ServicePolicyLi
 func servicePolicyMatchesFilter(policy OpenZitiServicePolicy, filter ServicePolicyListFilter) bool {
 	if filter.NamePrefix != "" && !strings.HasPrefix(policy.Name, filter.NamePrefix) {
 		return false
+	}
+	if filter.Type != "" && policy.Type != filter.Type {
+		return false
+	}
+	for _, identityRole := range filter.IdentityRoles {
+		if !containsString(policy.IdentityRoles, identityRole) {
+			return false
+		}
+	}
+	for _, serviceRole := range filter.ServiceRoles {
+		if !containsString(policy.ServiceRoles, serviceRole) {
+			return false
+		}
 	}
 	return true
 }
