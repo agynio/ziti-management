@@ -497,7 +497,7 @@ func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.U
 func (c *Client) CreateDeviceIdentityWithOptions(ctx context.Context, userIdentityID uuid.UUID, name string, additionalRoleAttributes []string, tags map[string]string) (string, string, error) {
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
-	roleAttrs := mergeRoleAttributes([]string{roleAttributeDevices}, additionalRoleAttributes)
+	roleAttrs := mergeRoleAttributes([]string{roleAttributeDevices, fmt.Sprintf("user-%s", userIdentityID.String())}, additionalRoleAttributes)
 	externalID := userIdentityID.String()
 	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
@@ -1332,7 +1332,7 @@ func (c *Client) CreateAndEnrollAppIdentityWithOptions(ctx context.Context, appI
 	name := fmt.Sprintf("app-%s-%s", slug, id.ShortUUID())
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
-	roleAttrs := mergeRoleAttributes([]string{roleAttributeApps}, additionalRoleAttributes)
+	roleAttrs := mergeRoleAttributes([]string{roleAttributeApps, fmt.Sprintf("app-%s", appID.String())}, additionalRoleAttributes)
 	externalID := appID.String()
 	if err := c.deleteIdentityByExternalID(ctx, externalID); err != nil {
 		return "", nil, fmt.Errorf("delete existing ziti identity: %w", err)

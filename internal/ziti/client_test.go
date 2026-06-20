@@ -20,6 +20,7 @@ import (
 	"github.com/openziti/edge-api/rest_management_api_client/service_policy"
 	"github.com/openziti/edge-api/rest_model"
 	sdkziti "github.com/openziti/sdk-golang/ziti"
+	"github.com/openziti/sdk-golang/ziti/enroll"
 )
 
 type fakeIdentityService struct {
@@ -1719,7 +1720,7 @@ func TestCreateDeviceIdentity(t *testing.T) {
 			if *params.Identity.Name != "laptop" {
 				t.Fatalf("unexpected identity name: %s", *params.Identity.Name)
 			}
-			if params.Identity.RoleAttributes == nil || !reflect.DeepEqual(*params.Identity.RoleAttributes, rest_model.Attributes{"devices"}) {
+			if params.Identity.RoleAttributes == nil || !reflect.DeepEqual(*params.Identity.RoleAttributes, rest_model.Attributes{"devices", "user-" + userID.String()}) {
 				t.Fatalf("unexpected role attributes: %#v", params.Identity.RoleAttributes)
 			}
 			if params.Identity.Enrollment == nil || !params.Identity.Enrollment.Ott {
@@ -1745,6 +1746,64 @@ func TestCreateDeviceIdentity(t *testing.T) {
 	}
 	if token != jwt {
 		t.Fatalf("expected jwt %q, got %q", jwt, token)
+	}
+}
+
+func TestCreateDeviceIdentityWithOptionsAddsUserAndGroupRoles(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+	fake := &fakeIdentityService{
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			assertCreateExternalID(t, params, userID)
+			assertCreateDeviceRoleAttributes(t, params, userID, "group-one", "group-two")
+			assertTags(t, params.Identity.Tags, map[string]string{"owner": "users"})
+			return createIdentityResponse("created-id"), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponse("jwt-token"), nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	_, _, err := client.CreateDeviceIdentityWithOptions(ctx, userID, "laptop", []string{"group-one", "group-two", "group-one"}, map[string]string{"owner": "users"})
+	if err != nil {
+		t.Fatalf("create device identity: %v", err)
+	}
+}
+
+func TestCreateAndEnrollAppIdentityWithOptionsAddsAppAndGroupRoles(t *testing.T) {
+	ctx := context.Background()
+	appID := uuid.New()
+	fake := &fakeIdentityService{
+		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
+			return listIdentitiesResponse(nil, 100, 0, 0), nil
+		},
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			assertCreateExternalID(t, params, appID)
+			assertCreateAppRoleAttributes(t, params, appID, "group-one", "group-two")
+			assertTags(t, params.Identity.Tags, map[string]string{"owner": "apps"})
+			return createIdentityResponse("app-ziti-id"), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponse("app-jwt"), nil
+		},
+	}
+	stubEnrollmentFuncs(t, func(token string) (*sdkziti.EnrollmentClaims, *jwt.Token, error) {
+		if token != "app-jwt" {
+			t.Fatalf("unexpected enrollment token: %s", token)
+		}
+		return &sdkziti.EnrollmentClaims{}, nil, nil
+	}, func(flags enroll.EnrollmentFlags) (*sdkziti.Config, error) {
+		return &sdkziti.Config{}, nil
+	})
+
+	client := &Client{identity: fake}
+	zitiID, identityJSON, err := client.CreateAndEnrollAppIdentityWithOptions(ctx, appID, "console", []string{"group-one", "group-two", "group-one"}, map[string]string{"owner": "apps"})
+	if err != nil {
+		t.Fatalf("create app identity: %v", err)
+	}
+	if zitiID != "app-ziti-id" || len(identityJSON) == 0 {
+		t.Fatalf("unexpected app identity result: %q %q", zitiID, string(identityJSON))
 	}
 }
 
@@ -1790,16 +1849,35 @@ func assertCreateExternalID(t *testing.T, params *identity.CreateIdentityParams,
 
 func assertCreateAgentRoleAttributes(t *testing.T, params *identity.CreateIdentityParams, agentID, workloadID uuid.UUID, additional ...string) {
 	t.Helper()
-	if params == nil || params.Identity == nil || params.Identity.RoleAttributes == nil {
-		t.Fatalf("expected create identity role attributes")
-	}
-	expectedRoleAttributes := rest_model.Attributes{
+	assertRoleAttributes(t, params, append([]string{
 		roleAttributeAgents,
 		"agent-" + agentID.String(),
 		"workload-" + workloadID.String(),
+	}, additional...)...)
+}
+
+func assertCreateDeviceRoleAttributes(t *testing.T, params *identity.CreateIdentityParams, userID uuid.UUID, additional ...string) {
+	t.Helper()
+	assertRoleAttributes(t, params, append([]string{
+		roleAttributeDevices,
+		"user-" + userID.String(),
+	}, additional...)...)
+}
+
+func assertCreateAppRoleAttributes(t *testing.T, params *identity.CreateIdentityParams, appID uuid.UUID, additional ...string) {
+	t.Helper()
+	assertRoleAttributes(t, params, append([]string{
+		roleAttributeApps,
+		"app-" + appID.String(),
+	}, additional...)...)
+}
+
+func assertRoleAttributes(t *testing.T, params *identity.CreateIdentityParams, expected ...string) {
+	t.Helper()
+	if params == nil || params.Identity == nil || params.Identity.RoleAttributes == nil {
+		t.Fatalf("expected create identity role attributes")
 	}
-	expectedRoleAttributes = append(expectedRoleAttributes, additional...)
-	if !reflect.DeepEqual(*params.Identity.RoleAttributes, expectedRoleAttributes) {
+	if !reflect.DeepEqual(*params.Identity.RoleAttributes, rest_model.Attributes(expected)) {
 		t.Fatalf("unexpected role attributes: %#v", params.Identity.RoleAttributes)
 	}
 }
