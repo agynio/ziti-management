@@ -34,6 +34,8 @@ func fromProtoIdentityType(value identityv1.IdentityType) (store.IdentityType, e
 		return store.IdentityTypeRunner, nil
 	case identityv1.IdentityType_IDENTITY_TYPE_APP:
 		return store.IdentityTypeApp, nil
+	case identityv1.IdentityType_IDENTITY_TYPE_SANDBOX:
+		return store.IdentityTypeSandbox, nil
 	case identityv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED:
 		return store.IdentityTypeUnspecified, fmt.Errorf("identity type unspecified")
 	default:
@@ -227,6 +229,8 @@ func toProtoIdentityType(value store.IdentityType) (identityv1.IdentityType, err
 		return identityv1.IdentityType_IDENTITY_TYPE_RUNNER, nil
 	case store.IdentityTypeApp:
 		return identityv1.IdentityType_IDENTITY_TYPE_APP, nil
+	case store.IdentityTypeSandbox:
+		return identityv1.IdentityType_IDENTITY_TYPE_SANDBOX, nil
 	case store.IdentityTypeUnspecified:
 		return identityv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED, nil
 	default:

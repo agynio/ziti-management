@@ -17,6 +17,7 @@ const (
 	IdentityTypeAgent       IdentityType = 1
 	IdentityTypeRunner      IdentityType = 2
 	IdentityTypeApp         IdentityType = 5 // Matches agynio.api.identity.v1.IdentityType enum values.
+	IdentityTypeSandbox     IdentityType = 7
 )
 
 type ServiceType int16

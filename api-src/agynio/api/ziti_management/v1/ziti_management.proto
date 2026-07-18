@@ -11,6 +11,9 @@ service ZitiManagementService {
   // Orchestrator -> create OpenZiti identity for an agent, return enrollment JWT.
   rpc CreateAgentIdentity(CreateAgentIdentityRequest) returns (CreateAgentIdentityResponse);
 
+  // Orchestrator -> create OpenZiti identity for a sandbox workload, return enrollment JWT.
+  rpc CreateSandboxIdentity(CreateSandboxIdentityRequest) returns (CreateSandboxIdentityResponse);
+
   // Apps Service -> create and enroll an OpenZiti identity for an app. If a previous
   // identity exists, deletes it first. Returns enrolled credentials.
   rpc CreateAppIdentity(CreateAppIdentityRequest) returns (CreateAppIdentityResponse);
@@ -141,6 +144,23 @@ message CreateAgentIdentityRequest {
 }
 
 message CreateAgentIdentityResponse {
+  string ziti_identity_id = 1;
+  string enrollment_jwt = 2;
+}
+
+message CreateSandboxIdentityRequest {
+  string sandbox_id = 1;
+  string owner_id = 2;
+  string environment_id = 3;
+  string organization_id = 4;
+  string workload_id = 5;
+  // Extra role attributes such as group-<id>. Base sandbox workload attributes are added by Ziti Management.
+  repeated string additional_role_attributes = 6;
+  // Tags attached to the OpenZiti identity.
+  map<string, string> tags = 7;
+}
+
+message CreateSandboxIdentityResponse {
   string ziti_identity_id = 1;
   string enrollment_jwt = 2;
 }

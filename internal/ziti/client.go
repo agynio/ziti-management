@@ -490,6 +490,41 @@ func (c *Client) CreateAgentIdentityWithOptions(ctx context.Context, agentID, wo
 	return zitiID, jwt.Token, nil
 }
 
+func (c *Client) CreateSandboxIdentity(ctx context.Context, sandboxID, ownerID, environmentID uuid.UUID, organizationID string, workloadID uuid.UUID, additionalRoleAttributes []string, tags map[string]string) (string, string, error) {
+	name := fmt.Sprintf("sandbox-%s-%s", sandboxID.String(), id.ShortUUID())
+	identityType := rest_model.IdentityTypeDevice
+	isAdmin := false
+	roleAttrs := mergeRoleAttributes([]string{
+		roleAttributeAgents,
+		fmt.Sprintf("sandbox-%s", sandboxID.String()),
+		fmt.Sprintf("sandbox-owner-%s", ownerID.String()),
+		fmt.Sprintf("environment-%s", environmentID.String()),
+		fmt.Sprintf("organization-%s", organizationID),
+		fmt.Sprintf("workload-%s", workloadID.String()),
+	}, additionalRoleAttributes)
+	externalID := workloadID.String()
+	identityCreate := &rest_model.IdentityCreate{
+		Name:           &name,
+		Type:           &identityType,
+		IsAdmin:        &isAdmin,
+		RoleAttributes: &roleAttrs,
+		ExternalID:     &externalID,
+		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
+		Tags:           tagsFromMap(tags),
+	}
+
+	zitiID, err := c.createIdentity(ctx, identityCreate)
+	if err != nil {
+		return "", "", err
+	}
+
+	jwt, err := c.fetchEnrollmentJWT(ctx, zitiID)
+	if err != nil {
+		return "", "", err
+	}
+	return zitiID, jwt.Token, nil
+}
+
 func (c *Client) CreateDeviceIdentity(ctx context.Context, userIdentityID uuid.UUID, name string) (string, string, error) {
 	return c.CreateDeviceIdentityWithOptions(ctx, userIdentityID, name, nil, nil)
 }

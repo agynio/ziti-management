@@ -34,6 +34,7 @@ type managedIdentityStore interface {
 type zitiClient interface {
 	CreateAgentIdentity(ctx context.Context, agentID, workloadID uuid.UUID) (string, string, error)
 	CreateAgentIdentityWithOptions(ctx context.Context, agentID, workloadID uuid.UUID, additionalRoleAttributes []string, tags map[string]string) (string, string, error)
+	CreateSandboxIdentity(ctx context.Context, sandboxID, ownerID, environmentID uuid.UUID, organizationID string, workloadID uuid.UUID, additionalRoleAttributes []string, tags map[string]string) (string, string, error)
 	CreateAndEnrollAppIdentity(ctx context.Context, appID uuid.UUID, slug string) (string, []byte, error)
 	CreateAndEnrollAppIdentityWithOptions(ctx context.Context, appID uuid.UUID, slug string, additionalRoleAttributes []string, tags map[string]string) (string, []byte, error)
 	CreateAndEnrollRunnerIdentity(ctx context.Context, runnerID uuid.UUID, roleAttributes []string) (string, []byte, error)
@@ -113,6 +114,50 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 	}
 
 	return &zitimanagementv1.CreateAgentIdentityResponse{
+		ZitiIdentityId: zitiID,
+		EnrollmentJwt:  jwt,
+	}, nil
+}
+
+func (s *Server) CreateSandboxIdentity(ctx context.Context, req *zitimanagementv1.CreateSandboxIdentityRequest) (*zitimanagementv1.CreateSandboxIdentityResponse, error) {
+	sandboxID, err := parseUUID(req.GetSandboxId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "sandbox_id: %v", err)
+	}
+	ownerID, err := parseUUID(req.GetOwnerId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "owner_id: %v", err)
+	}
+	environmentID, err := parseUUID(req.GetEnvironmentId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "environment_id: %v", err)
+	}
+	organizationID := strings.TrimSpace(req.GetOrganizationId())
+	if organizationID == "" {
+		return nil, status.Error(codes.InvalidArgument, "organization_id is required")
+	}
+	workloadID, err := parseUUID(req.GetWorkloadId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "workload_id: %v", err)
+	}
+
+	zitiID, jwt, err := s.ziti.CreateSandboxIdentity(ctx, sandboxID, ownerID, environmentID, organizationID, workloadID, req.GetAdditionalRoleAttributes(), req.GetTags())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "create sandbox ziti identity: %v", err)
+	}
+
+	identity := store.ManagedIdentity{
+		ZitiIdentityID: zitiID,
+		IdentityID:     sandboxID,
+		WorkloadID:     &workloadID,
+		IdentityType:   store.IdentityTypeSandbox,
+	}
+	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
+		s.cleanupZitiIdentity(ctx, zitiID, "sandbox identity")
+		return nil, status.Errorf(codes.Internal, "insert managed identity: %v", err)
+	}
+
+	return &zitimanagementv1.CreateSandboxIdentityResponse{
 		ZitiIdentityId: zitiID,
 		EnrollmentJwt:  jwt,
 	}, nil
