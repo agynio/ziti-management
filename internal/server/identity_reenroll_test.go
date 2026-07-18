@@ -74,7 +74,9 @@ type fakeZitiClient struct {
 	deleteIdentityIDs []string
 	deleteServiceIDs  []string
 	agentCalls        []agentCall
+	sandboxCalls      []sandboxCall
 	createAgentErr    error
+	createSandboxErr  error
 	patchIdentityErr  error
 	patchIdentityCall *patchIdentityCall
 	tunnelExpiresAt   time.Time
@@ -91,6 +93,14 @@ type agentCall struct {
 	workloadID uuid.UUID
 }
 
+type sandboxCall struct {
+	sandboxID      uuid.UUID
+	ownerID        uuid.UUID
+	environmentID  uuid.UUID
+	organizationID string
+	workloadID     uuid.UUID
+}
+
 func (f *fakeZitiClient) CreateAgentIdentity(_ context.Context, agentID, workloadID uuid.UUID) (string, string, error) {
 	call := agentCall{agentID: agentID, workloadID: workloadID}
 	f.agentCalls = append(f.agentCalls, call)
@@ -102,6 +112,15 @@ func (f *fakeZitiClient) CreateAgentIdentity(_ context.Context, agentID, workloa
 
 func (f *fakeZitiClient) CreateAgentIdentityWithOptions(ctx context.Context, agentID, workloadID uuid.UUID, _ []string, _ map[string]string) (string, string, error) {
 	return f.CreateAgentIdentity(ctx, agentID, workloadID)
+}
+
+func (f *fakeZitiClient) CreateSandboxIdentity(_ context.Context, sandboxID, ownerID, environmentID uuid.UUID, organizationID string, workloadID uuid.UUID, _ []string, _ map[string]string) (string, string, error) {
+	call := sandboxCall{sandboxID: sandboxID, ownerID: ownerID, environmentID: environmentID, organizationID: organizationID, workloadID: workloadID}
+	f.sandboxCalls = append(f.sandboxCalls, call)
+	if f.createSandboxErr != nil {
+		return "", "", f.createSandboxErr
+	}
+	return fmt.Sprintf("sandbox-ziti-%d", len(f.sandboxCalls)), fmt.Sprintf("sandbox-jwt-%d", len(f.sandboxCalls)), nil
 }
 
 func (f *fakeZitiClient) CreateAndEnrollAppIdentity(_ context.Context, _ uuid.UUID, _ string) (string, []byte, error) {
@@ -400,6 +419,56 @@ func TestCreateAgentIdentityStoresWorkloadID(t *testing.T) {
 	stored, ok := storeClient.managed[agentID]
 	if !ok {
 		t.Fatalf("expected managed identity for %s", agentID)
+	}
+	if stored.WorkloadID == nil {
+		t.Fatalf("expected workload id to be stored")
+	}
+	if *stored.WorkloadID != workloadID {
+		t.Fatalf("expected workload id %s, got %s", workloadID, *stored.WorkloadID)
+	}
+}
+
+func TestCreateSandboxIdentityStoresSandboxWorkloadID(t *testing.T) {
+	ctx := context.Background()
+	sandboxID := uuid.New()
+	ownerID := uuid.New()
+	environmentID := uuid.New()
+	workloadID := uuid.New()
+	storeClient := newFakeManagedIdentityStore()
+	zitiClient := &fakeZitiClient{}
+	server := New(storeClient, zitiClient, time.Minute, false)
+
+	request := &zitimanagementv1.CreateSandboxIdentityRequest{
+		SandboxId:      sandboxID.String(),
+		OwnerId:        ownerID.String(),
+		EnvironmentId:  environmentID.String(),
+		OrganizationId: "org-one",
+		WorkloadId:     workloadID.String(),
+	}
+
+	resp, err := server.CreateSandboxIdentity(ctx, request)
+	if err != nil {
+		t.Fatalf("create sandbox identity: %v", err)
+	}
+	if resp.GetZitiIdentityId() != "sandbox-ziti-1" {
+		t.Fatalf("expected sandbox-ziti-1, got %q", resp.GetZitiIdentityId())
+	}
+	if resp.GetEnrollmentJwt() != "sandbox-jwt-1" {
+		t.Fatalf("expected sandbox-jwt-1, got %q", resp.GetEnrollmentJwt())
+	}
+	if len(zitiClient.sandboxCalls) != 1 {
+		t.Fatalf("expected 1 sandbox call, got %d", len(zitiClient.sandboxCalls))
+	}
+	call := zitiClient.sandboxCalls[0]
+	if call.sandboxID != sandboxID || call.ownerID != ownerID || call.environmentID != environmentID || call.organizationID != "org-one" || call.workloadID != workloadID {
+		t.Fatalf("unexpected sandbox call: %#v", call)
+	}
+	stored, ok := storeClient.managed[sandboxID]
+	if !ok {
+		t.Fatalf("expected managed identity for %s", sandboxID)
+	}
+	if stored.IdentityType != store.IdentityTypeSandbox {
+		t.Fatalf("expected sandbox identity type, got %d", stored.IdentityType)
 	}
 	if stored.WorkloadID == nil {
 		t.Fatalf("expected workload id to be stored")

@@ -239,6 +239,37 @@ func TestCreateAgentIdentityWithOptionsAddsRolesAndTags(t *testing.T) {
 	}
 }
 
+func TestCreateSandboxIdentityCreatesSandboxRolesAndTags(t *testing.T) {
+	ctx := context.Background()
+	sandboxID := uuid.New()
+	ownerID := uuid.New()
+	environmentID := uuid.New()
+	workloadID := uuid.New()
+	fake := &fakeIdentityService{
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			assertCreateExternalID(t, params, workloadID)
+			assertCreateSandboxRoleAttributes(t, params, sandboxID, ownerID, environmentID, "org-one", workloadID, "group-one")
+			assertTags(t, params.Identity.Tags, map[string]string{"owner": "sandbox"})
+			return createIdentityResponse("sandbox-ziti-id"), nil
+		},
+		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponse("sandbox-jwt"), nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	zitiID, token, err := client.CreateSandboxIdentity(ctx, sandboxID, ownerID, environmentID, "org-one", workloadID, []string{"group-one"}, map[string]string{"owner": "sandbox"})
+	if err != nil {
+		t.Fatalf("create sandbox identity: %v", err)
+	}
+	if zitiID != "sandbox-ziti-id" {
+		t.Fatalf("expected sandbox-ziti-id, got %q", zitiID)
+	}
+	if token != "sandbox-jwt" {
+		t.Fatalf("expected sandbox-jwt, got %q", token)
+	}
+}
+
 func TestCreateTunnelIdentityCreatesTunnelRolesAndTags(t *testing.T) {
 	ctx := context.Background()
 	expiresAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
@@ -1861,6 +1892,18 @@ func assertCreateDeviceRoleAttributes(t *testing.T, params *identity.CreateIdent
 	assertRoleAttributes(t, params, append([]string{
 		roleAttributeDevices,
 		"user-" + userID.String(),
+	}, additional...)...)
+}
+
+func assertCreateSandboxRoleAttributes(t *testing.T, params *identity.CreateIdentityParams, sandboxID, ownerID, environmentID uuid.UUID, organizationID string, workloadID uuid.UUID, additional ...string) {
+	t.Helper()
+	assertRoleAttributes(t, params, append([]string{
+		roleAttributeAgents,
+		"sandbox-" + sandboxID.String(),
+		"sandbox-owner-" + ownerID.String(),
+		"environment-" + environmentID.String(),
+		"organization-" + organizationID,
+		"workload-" + workloadID.String(),
 	}, additional...)...)
 }
 
