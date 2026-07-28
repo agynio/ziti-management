@@ -155,7 +155,6 @@ dev:
     namespace: ${ZITI_MANAGEMENT_NAMESPACE}
     labelSelector:
       app.kubernetes.io/name: ziti-management
-      app.kubernetes.io/instance: ziti-management
     containers:
       ziti-management:
         container: ziti-management
