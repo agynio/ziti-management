@@ -81,6 +81,11 @@ functions:
                   type: RuntimeDefault
     EOF
     )"
+    # go run recompiles on every restart; the probes would kill the pod before
+    # the first build finishes. Nulling through a strategic merge tolerates
+    # them already being absent, so the patch stays re-runnable.
+    kubectl patch deployment "${ZITI_MANAGEMENT_DEPLOYMENT}" -n ${ZITI_MANAGEMENT_NAMESPACE} --type strategic --patch \
+      '{"spec":{"template":{"spec":{"containers":[{"name":"ziti-management","livenessProbe":null,"readinessProbe":null}]}}}}'
 
 deployments:
   e2e-runner:
