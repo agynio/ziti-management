@@ -27,7 +27,12 @@ functions:
     fi
   patch_deployment: |-
     echo "Patching ziti-management deployment for DevSpace..."
-    kubectl patch deployment ziti-management-ziti-management -n ${ZITI_MANAGEMENT_NAMESPACE} --type strategic --patch "$(cat <<'EOF'
+    # The deployment name depends on how the chart was installed — its own
+    # release names it ziti-management-ziti-management, the umbrella names it
+    # ziti-management. Look it up by label rather than guessing.
+    ZITI_MANAGEMENT_DEPLOYMENT="$(kubectl get deployment -n ${ZITI_MANAGEMENT_NAMESPACE} \
+      -l app.kubernetes.io/name=ziti-management -o jsonpath='{.items[0].metadata.name}')"
+    kubectl patch deployment "${ZITI_MANAGEMENT_DEPLOYMENT}" -n ${ZITI_MANAGEMENT_NAMESPACE} --type strategic --patch "$(cat <<'EOF'
     spec:
       template:
         spec:
@@ -76,6 +81,11 @@ functions:
                   type: RuntimeDefault
     EOF
     )"
+    # go run recompiles on every restart; the probes would kill the pod before
+    # the first build finishes. Nulling through a strategic merge tolerates
+    # them already being absent, so the patch stays re-runnable.
+    kubectl patch deployment "${ZITI_MANAGEMENT_DEPLOYMENT}" -n ${ZITI_MANAGEMENT_NAMESPACE} --type strategic --patch \
+      '{"spec":{"template":{"spec":{"containers":[{"name":"ziti-management","livenessProbe":null,"readinessProbe":null}]}}}}'
 
 deployments:
   e2e-runner:
@@ -94,8 +104,8 @@ deployments:
           app.kubernetes.io/name: ziti-management-e2e
 
 commands:
-  test:e2e: |-
-    devspace run-pipeline test:e2e $@
+  test-e2e: |-
+    devspace run-pipeline test-e2e $@
 
 pipelines:
   dev:
@@ -127,7 +137,7 @@ pipelines:
         stop_dev ziti-management
       fi
 
-  test:e2e:
+  test-e2e:
     run: |-
       create_deployments e2e-runner
       start_dev e2e-runner &
@@ -155,7 +165,6 @@ dev:
     namespace: ${ZITI_MANAGEMENT_NAMESPACE}
     labelSelector:
       app.kubernetes.io/name: ziti-management
-      app.kubernetes.io/instance: ziti-management
     containers:
       ziti-management:
         container: ziti-management

@@ -892,6 +892,11 @@ func serviceIdentityConfig(serviceType store.ServiceType) (string, []string, err
 		return fmt.Sprintf("svc-runners-%s", suffix), []string{"runners-service-hosts"}, nil
 	case store.ServiceTypeEgressGateway:
 		return fmt.Sprintf("svc-egress-gateway-%s", suffix), []string{"egress-gateway-hosts"}, nil
+	case store.ServiceTypeTerminalProxy:
+		// Dials runner-{runnerId} to open exec streams; the static
+		// terminal-proxy-dial-runners policy grants this attribute against
+		// #runner-services.
+		return fmt.Sprintf("svc-terminal-proxy-%s", suffix), []string{"terminal-proxy-hosts"}, nil
 	case store.ServiceTypeUnspecified:
 		return "", nil, fmt.Errorf("service type unspecified")
 	default:

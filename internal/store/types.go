@@ -30,6 +30,7 @@ const (
 	ServiceTypeTracing       ServiceType = 5
 	ServiceTypeRunners       ServiceType = 6
 	ServiceTypeEgressGateway ServiceType = 7
+	ServiceTypeTerminalProxy ServiceType = 8
 )
 
 type ManagedIdentity struct {
