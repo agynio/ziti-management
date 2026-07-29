@@ -27,7 +27,12 @@ functions:
     fi
   patch_deployment: |-
     echo "Patching ziti-management deployment for DevSpace..."
-    kubectl patch deployment ziti-management-ziti-management -n ${ZITI_MANAGEMENT_NAMESPACE} --type strategic --patch "$(cat <<'EOF'
+    # The deployment name depends on how the chart was installed — its own
+    # release names it ziti-management-ziti-management, the umbrella names it
+    # ziti-management. Look it up by label rather than guessing.
+    ZITI_MANAGEMENT_DEPLOYMENT="$(kubectl get deployment -n ${ZITI_MANAGEMENT_NAMESPACE} \
+      -l app.kubernetes.io/name=ziti-management -o jsonpath='{.items[0].metadata.name}')"
+    kubectl patch deployment "${ZITI_MANAGEMENT_DEPLOYMENT}" -n ${ZITI_MANAGEMENT_NAMESPACE} --type strategic --patch "$(cat <<'EOF'
     spec:
       template:
         spec:
