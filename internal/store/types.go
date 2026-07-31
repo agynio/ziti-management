@@ -17,7 +17,10 @@ const (
 	IdentityTypeAgent       IdentityType = 1
 	IdentityTypeRunner      IdentityType = 2
 	IdentityTypeApp         IdentityType = 5 // Matches agynio.api.identity.v1.IdentityType enum values.
-	IdentityTypeSandbox     IdentityType = 7
+	// An agent workload authenticates as the instance it runs, not as the class:
+	// the instance owns the inbox, the volumes and the runner pinning.
+	IdentityTypeAgentInstance IdentityType = 6
+	IdentityTypeSandbox       IdentityType = 7
 )
 
 type ServiceType int16

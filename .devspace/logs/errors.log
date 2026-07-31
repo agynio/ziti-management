@@ -1,0 +1,5 @@
+{"level":"error","msg":"Runtime error occurred: error closing listener: close tcp4 127.0.0.1:50051: use of closed network connection","time":"2026-07-29T18:30:08+02:00"}
+{"level":"error","msg":"Runtime error occurred: error closing listener: close tcp6 [::1]:50051: use of closed network connection","time":"2026-07-29T18:30:08+02:00"}
+{"level":"error","msg":"Runtime error occurred: error closing listener: close tcp4 127.0.0.1:50051: use of closed network connection","time":"2026-07-29T18:42:46+02:00"}
+{"level":"error","msg":"Runtime error occurred: error closing listener: close tcp6 [::1]:50051: use of closed network connection","time":"2026-07-29T18:42:46+02:00"}
+{"level":"error","msg":"Runtime error occurred: io: read/write on closed pipe","time":"2026-07-29T18:42:46+02:00"}

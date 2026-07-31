@@ -30,6 +30,8 @@ func fromProtoIdentityType(value identityv1.IdentityType) (store.IdentityType, e
 	switch value {
 	case identityv1.IdentityType_IDENTITY_TYPE_AGENT:
 		return store.IdentityTypeAgent, nil
+	case identityv1.IdentityType_IDENTITY_TYPE_AGENT_INSTANCE:
+		return store.IdentityTypeAgentInstance, nil
 	case identityv1.IdentityType_IDENTITY_TYPE_RUNNER:
 		return store.IdentityTypeRunner, nil
 	case identityv1.IdentityType_IDENTITY_TYPE_APP:
@@ -227,6 +229,8 @@ func toProtoIdentityType(value store.IdentityType) (identityv1.IdentityType, err
 	switch value {
 	case store.IdentityTypeAgent:
 		return identityv1.IdentityType_IDENTITY_TYPE_AGENT, nil
+	case store.IdentityTypeAgentInstance:
+		return identityv1.IdentityType_IDENTITY_TYPE_AGENT_INSTANCE, nil
 	case store.IdentityTypeRunner:
 		return identityv1.IdentityType_IDENTITY_TYPE_RUNNER, nil
 	case store.IdentityTypeApp:

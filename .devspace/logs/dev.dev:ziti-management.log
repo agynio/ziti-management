@@ -1,0 +1,209 @@
+{"level":"info","msg":"dev:ziti-management Waiting for pod to become ready...","time":"2026-07-29T18:09:33+02:00"}
+{"level":"warning","msg":"dev:ziti-management Pod ziti-management-7c7544fcf8-gp7rd: Readiness probe failed: dial tcp 10.42.0.98:50051: connect: connection refused (Unhealthy)","time":"2026-07-29T18:09:54+02:00"}
+{"level":"warning","msg":"dev:ziti-management Pod ziti-management-7c7544fcf8-gp7rd: Liveness probe failed: dial tcp 10.42.0.98:50051: connect: connection refused (Unhealthy)","time":"2026-07-29T18:09:54+02:00"}
+{"level":"info","msg":"dev:ziti-management Waiting for pod to become ready...","time":"2026-07-29T18:28:49+02:00"}
+{"level":"warning","msg":"dev:ziti-management Pod ziti-management-7c7544fcf8-gp7rd: Back-off restarting failed container ziti-management in pod ziti-management-7c7544fcf8-gp7rd_platform(5c23c8ba-e3cd-4df2-8a14-e6b01adde17e) (BackOff)","time":"2026-07-29T18:28:59+02:00"}
+{"level":"warning","msg":"dev:ziti-management Pod k8s-runner-6759cb9fdc-lkftn: Back-off restarting failed container k8s-runner in pod k8s-runner-6759cb9fdc-lkftn_platform(e3b57d4c-712b-4187-83bb-4562a359ab71) (BackOff)","time":"2026-07-29T18:28:59+02:00"}
+{"level":"warning","msg":"dev:ziti-management Pod ziti-management-7c7544fcf8-gp7rd: Readiness probe failed: dial tcp 10.42.0.98:50051: connect: connection refused (Unhealthy)","time":"2026-07-29T18:28:59+02:00"}
+{"level":"warning","msg":"dev:ziti-management Pod ziti-management-7c7544fcf8-gp7rd: Liveness probe failed: dial tcp 10.42.0.98:50051: connect: connection refused (Unhealthy)","time":"2026-07-29T18:28:59+02:00"}
+{"level":"warning","msg":"dev:ziti-management Pod notifications-redis-replicas-2: Readiness probe failed: command timed out: \"/bin/bash -ec /health/ping_readiness_local_and_master.sh 1\" timed out after 2s (Unhealthy)","time":"2026-07-29T18:28:59+02:00"}
+{"level":"warning","msg":"dev:ziti-management DevSpace still couldn't find any Pods that match the selector. DevSpace will continue waiting, but this operation might timeout","time":"2026-07-29T18:28:59+02:00"}
+{"level":"warning","msg":"dev:ziti-management DevSpace still couldn't find any Pods that match the selector. DevSpace will continue waiting, but this operation might timeout","time":"2026-07-29T18:29:10+02:00"}
+{"level":"warning","msg":"dev:ziti-management DevSpace is waiting, because Pod ziti-management-577d486458-x2dtk has status: ContainerCreating","time":"2026-07-29T18:29:20+02:00"}
+{"level":"info","msg":"dev:ziti-management Selected pod ziti-management-577d486458-x2dtk","time":"2026-07-29T18:29:21+02:00"}
+{"level":"info","msg":"dev:ziti-management ports Port forwarding started on: 50051 -\u003e 50051","time":"2026-07-29T18:29:21+02:00"}
+{"level":"info","msg":"dev:ziti-management sync  Sync started on: ./ \u003c-\u003e /opt/app/data","time":"2026-07-29T18:29:23+02:00"}
+{"level":"info","msg":"dev:ziti-management sync  Waiting for initial sync to complete","time":"2026-07-29T18:29:23+02:00"}
+{"level":"info","msg":"dev:ziti-management sync  Initial sync completed","time":"2026-07-29T18:29:25+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  Streaming logs of pod:container ziti-management-577d486458-x2dtk:ziti-management","time":"2026-07-29T18:29:26+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/jackc/pgx/v5 v5.8.0","time":"2026-07-29T18:29:27+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading google.golang.org/grpc v1.79.1","time":"2026-07-29T18:29:27+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading google.golang.org/protobuf v1.36.11","time":"2026-07-29T18:29:28+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/google/uuid v1.6.0","time":"2026-07-29T18:29:28+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/runtime v0.29.3","time":"2026-07-29T18:29:28+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/edge-api v0.27.5","time":"2026-07-29T18:29:28+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/sdk-golang v1.6.0","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/jackc/puddle/v2 v2.2.2","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/net v0.52.0","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/errors v0.22.7","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/strfmt v0.26.0","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/fileutils v0.25.5","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/jsonutils v0.25.5","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag v0.25.5","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/stringutils v0.25.5","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/sync v0.20.0","time":"2026-07-29T18:29:29+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/fullsailor/pkcs7 v0.0.0-20190404230743-d7302db945fa","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/pkg/errors v0.9.1","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/validate v0.25.2","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/cenkalti/backoff/v4 v4.3.0","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/golang-jwt/jwt/v5 v5.3.1","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/kataras/go-events v0.0.3","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/michaelquigley/pfxlog v0.6.10","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/channel/v4 v4.3.9","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/foundation/v2 v2.0.90","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/identity v1.0.128","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/metrics v1.4.5","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/secretstream v0.1.49","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/transport/v2 v2.0.215","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/orcaman/concurrent-map/v2 v2.0.1","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/sirupsen/logrus v1.9.4","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/zitadel/oidc/v3 v3.45.5","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/Jeffail/gabs v1.4.0","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/jackc/pgpassfile v1.0.0","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/text v0.35.0","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/sys v0.42.0","time":"2026-07-29T18:29:30+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-viper/mapstructure/v2 v2.5.0","time":"2026-07-29T18:29:31+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/oklog/ulid/v2 v2.1.1","time":"2026-07-29T18:29:31+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/typeutils v0.25.5","time":"2026-07-29T18:29:31+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading go.opentelemetry.io/otel v1.41.0","time":"2026-07-29T18:29:31+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading go.opentelemetry.io/otel/trace v1.41.0","time":"2026-07-29T18:29:31+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/cmdutils v0.25.5","time":"2026-07-29T18:29:31+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/conv v0.25.5","time":"2026-07-29T18:29:31+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/jsonname v0.25.5","time":"2026-07-29T18:29:31+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/loading v0.25.5","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/mangling v0.25.5","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/netutils v0.25.5","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/yamlutils v0.25.5","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/analysis v0.24.3","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/jsonpointer v0.22.5","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/loads v0.23.3","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/spec v0.22.4","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/crypto v0.49.0","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-resty/resty/v2 v2.17.2","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/oauth2 v0.36.0","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/emirpasic/gods v1.18.1","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/mitchellh/mapstructure v1.5.0","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/mitchellh/go-ps v1.0.0","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/shirou/gopsutil/v3 v3.24.5","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-jose/go-jose/v4 v4.1.3","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/muhlemmer/gu v0.3.1","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/zitadel/schema v1.3.2","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading go.yaml.in/yaml/v3 v3.0.4","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-logr/logr v1.4.3","time":"2026-07-29T18:29:32+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading go.opentelemetry.io/otel/metric v1.41.0","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/jsonreference v0.21.5","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/speps/go-hashids v2.0.0+incompatible","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/term v0.41.0","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/tklauser/go-sysconf v0.3.12","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/parallaxsecond/parsec-client-go v0.0.0-20221025095442-f0a77d263cf9","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-logr/stdr v1.2.2","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading go.opentelemetry.io/auto/sdk v1.2.1","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/cespare/xxhash/v2 v2.3.0","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/zitadel/logging v0.7.0","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/gorilla/securecookie v1.1.2","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/tklauser/numcpus v0.6.1","time":"2026-07-29T18:29:33+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 ZitiManagementService listening on :50051","time":"2026-07-29T18:30:06+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 garbage collected service identity MsTEfR1w5","time":"2026-07-29T18:30:06+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 garbage collected service identity xuPiKY.wI","time":"2026-07-29T18:30:06+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 garbage collected service identity .DaiKY1XIu","time":"2026-07-29T18:30:06+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 garbage collected service identity URpvHx.X5","time":"2026-07-29T18:30:06+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 garbage collected service identity PyQDUY.X5","time":"2026-07-29T18:30:06+02:00"}
+{"level":"info","msg":"dev:ziti-management Waiting for pod to become ready...","time":"2026-07-29T18:42:43+02:00"}
+{"level":"info","msg":"dev:ziti-management Selected pod ziti-management-577d486458-x2dtk","time":"2026-07-29T18:42:44+02:00"}
+{"level":"info","msg":"dev:ziti-management ports Port forwarding started on: 50051 -\u003e 50051","time":"2026-07-29T18:42:44+02:00"}
+{"level":"info","msg":"dev:ziti-management sync  Sync started on: ./ \u003c-\u003e /opt/app/data","time":"2026-07-29T18:42:45+02:00"}
+{"level":"info","msg":"dev:ziti-management sync  Waiting for initial sync to complete","time":"2026-07-29T18:42:45+02:00"}
+{"level":"info","msg":"dev:ziti-management sync  Initial sync completed","time":"2026-07-29T18:42:45+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  Streaming logs of pod:container ziti-management-577d486458-x2dtk:ziti-management","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/jackc/pgx/v5 v5.8.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading google.golang.org/grpc v1.79.1","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading google.golang.org/protobuf v1.36.11","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/google/uuid v1.6.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/runtime v0.29.3","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/edge-api v0.27.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/sdk-golang v1.6.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/jackc/puddle/v2 v2.2.2","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/net v0.52.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/errors v0.22.7","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/strfmt v0.26.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/fileutils v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/jsonutils v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/stringutils v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/sync v0.20.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/fullsailor/pkcs7 v0.0.0-20190404230743-d7302db945fa","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/pkg/errors v0.9.1","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/validate v0.25.2","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/cenkalti/backoff/v4 v4.3.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/golang-jwt/jwt/v5 v5.3.1","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/kataras/go-events v0.0.3","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/michaelquigley/pfxlog v0.6.10","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/channel/v4 v4.3.9","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/foundation/v2 v2.0.90","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/identity v1.0.128","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/metrics v1.4.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/secretstream v0.1.49","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/openziti/transport/v2 v2.0.215","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/orcaman/concurrent-map/v2 v2.0.1","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/sirupsen/logrus v1.9.4","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/zitadel/oidc/v3 v3.45.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/Jeffail/gabs v1.4.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/jackc/pgpassfile v1.0.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/text v0.35.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/sys v0.42.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-viper/mapstructure/v2 v2.5.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/oklog/ulid/v2 v2.1.1","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/typeutils v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading go.opentelemetry.io/otel v1.41.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading go.opentelemetry.io/otel/trace v1.41.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/cmdutils v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/conv v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/jsonname v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/loading v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/mangling v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/netutils v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/swag/yamlutils v0.25.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/analysis v0.24.3","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/jsonpointer v0.22.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/loads v0.23.3","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/spec v0.22.4","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/crypto v0.49.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-resty/resty/v2 v2.17.2","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/oauth2 v0.36.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/emirpasic/gods v1.18.1","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/mitchellh/mapstructure v1.5.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/mitchellh/go-ps v1.0.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/shirou/gopsutil/v3 v3.24.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-jose/go-jose/v4 v4.1.3","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/muhlemmer/gu v0.3.1","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/zitadel/schema v1.3.2","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading go.yaml.in/yaml/v3 v3.0.4","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-logr/logr v1.4.3","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading go.opentelemetry.io/otel/metric v1.41.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-openapi/jsonreference v0.21.5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/speps/go-hashids v2.0.0+incompatible","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading golang.org/x/term v0.41.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/tklauser/go-sysconf v0.3.12","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/parallaxsecond/parsec-client-go v0.0.0-20221025095442-f0a77d263cf9","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/go-logr/stdr v1.2.2","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading go.opentelemetry.io/auto/sdk v1.2.1","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/cespare/xxhash/v2 v2.3.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/zitadel/logging v0.7.0","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/gorilla/securecookie v1.1.2","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: go: downloading github.com/tklauser/numcpus v0.6.1","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 ZitiManagementService listening on :50051","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 garbage collected service identity MsTEfR1w5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 garbage collected service identity xuPiKY.wI","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 garbage collected service identity .DaiKY1XIu","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 garbage collected service identity URpvHx.X5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:30:06 garbage collected service identity PyQDUY.X5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: time=\"2026-07-29T16:30:22Z\" level=info msg=\"generating P-384 EC key\"","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: time=\"2026-07-29T16:30:22Z\" level=info msg=\"generating P-384 EC key\"","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: time=\"2026-07-29T16:31:50Z\" level=info msg=\"generating P-384 EC key\"","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: time=\"2026-07-29T16:32:28Z\" level=info msg=\"generating P-384 EC key\"","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: time=\"2026-07-29T16:33:14Z\" level=info msg=\"generating P-384 EC key\"","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: time=\"2026-07-29T16:33:26Z\" level=info msg=\"generating P-384 EC key\"","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: time=\"2026-07-29T16:33:26Z\" level=info msg=\"generating P-384 EC key\"","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:36:03 garbage collected service identity nKrEgx.X5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:37:02 garbage collected service identity XnPMgx.w5u","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:38:02 garbage collected service identity pWLEgx.X5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:38:02 garbage collected service identity Y1pR-61X5","time":"2026-07-29T18:42:46+02:00"}
+{"level":"info","msg":"dev:ziti-management logs  ziti-management: 2026/07/29 16:39:02 garbage collected service identity vf0xg6.wI","time":"2026-07-29T18:42:46+02:00"}
