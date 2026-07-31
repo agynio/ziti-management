@@ -106,7 +106,7 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 		ZitiIdentityID: zitiID,
 		IdentityID:     agentID,
 		WorkloadID:     &workloadID,
-		IdentityType:   store.IdentityTypeAgent,
+		IdentityType:   store.IdentityTypeAgentInstance,
 	}
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
 		s.cleanupZitiIdentity(ctx, zitiID, "ziti identity")

@@ -1,0 +1,10 @@
+{"level":"info","msg":"Inject devspacehelper...","time":"2026-07-29T18:29:21+02:00"}
+{"level":"info","msg":"Successfully injected devspacehelper into pod platform/ziti-management-577d486458-x2dtk","time":"2026-07-29T18:29:23+02:00"}
+{"level":"info","msg":"Start syncing","time":"2026-07-29T18:29:23+02:00"}
+{"level":"info","msg":"Downstream - Initial sync completed","time":"2026-07-29T18:29:23+02:00"}
+{"level":"info","msg":"Upstream - Upload 100 create change(s) (Uncompressed ~601.66 KB)","time":"2026-07-29T18:29:24+02:00"}
+{"level":"info","msg":"Upstream - Successfully processed 100 change(s)","time":"2026-07-29T18:29:24+02:00"}
+{"level":"info","msg":"Upstream - Initial sync completed","time":"2026-07-29T18:29:25+02:00"}
+{"level":"info","msg":"Start syncing","time":"2026-07-29T18:42:45+02:00"}
+{"level":"info","msg":"Downstream - Initial sync completed","time":"2026-07-29T18:42:45+02:00"}
+{"level":"info","msg":"Upstream - Initial sync completed","time":"2026-07-29T18:42:45+02:00"}
