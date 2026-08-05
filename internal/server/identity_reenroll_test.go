@@ -80,6 +80,7 @@ type fakeZitiClient struct {
 	patchIdentityErr  error
 	patchIdentityCall *patchIdentityCall
 	tunnelExpiresAt   time.Time
+	deleteIdentityErr error
 }
 
 type patchIdentityCall struct {
@@ -200,7 +201,7 @@ func (f *fakeZitiClient) CreateTunnelIdentity(_ context.Context, _, _ string, _ 
 
 func (f *fakeZitiClient) DeleteIdentity(_ context.Context, zitiID string) error {
 	f.deleteIdentityIDs = append(f.deleteIdentityIDs, zitiID)
-	return nil
+	return f.deleteIdentityErr
 }
 
 func (f *fakeZitiClient) DeleteService(_ context.Context, serviceID string) error {

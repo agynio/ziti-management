@@ -369,7 +369,11 @@ func (s *Server) DeleteIdentity(ctx context.Context, req *zitimanagementv1.Delet
 	if zitiID == "" {
 		return nil, status.Error(codes.InvalidArgument, "ziti_identity_id is required")
 	}
-	if err := s.store.DeleteManagedIdentity(ctx, zitiID); err != nil {
+	// Deletion is idempotent, the same way the Ziti side below already is. The
+	// caller is a reconciler that retries until the identity is gone, so
+	// reporting an already-removed record as NotFound leaves it retrying
+	// forever - which stalled sandbox starts behind a compensating delete.
+	if err := s.store.DeleteManagedIdentity(ctx, zitiID); err != nil && !errors.Is(err, store.ErrManagedIdentityNotFound) {
 		return nil, toStatusError(err)
 	}
 	if err := s.ziti.DeleteIdentity(ctx, zitiID); err != nil {
