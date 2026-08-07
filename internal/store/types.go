@@ -43,6 +43,10 @@ type ManagedIdentity struct {
 	IdentityType   IdentityType
 	ZitiServiceID  *string
 	CreatedAt      time.Time
+	// Workload identities only: the agent class this instance runs, and the
+	// environment it runs. AgentID is nil for a sandbox, which has no agent.
+	AgentID       *uuid.UUID
+	EnvironmentID *uuid.UUID
 }
 
 type ServiceIdentity struct {

@@ -97,6 +97,17 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 		return nil, status.Errorf(codes.InvalidArgument, "workload_id: %v", err)
 	}
 
+	// The class and the environment are optional: identities minted before they
+	// were recorded still resolve, with the fields absent.
+	agentClassID, err := parseOptionalUUID(req.GetAgentClassId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "agent_class_id: %v", err)
+	}
+	environmentID, err := parseOptionalUUID(req.GetEnvironmentId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "environment_id: %v", err)
+	}
+
 	zitiID, jwt, err := s.ziti.CreateAgentIdentityWithOptions(ctx, agentID, workloadID, req.GetAdditionalRoleAttributes(), req.GetTags())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create ziti identity: %v", err)
@@ -107,6 +118,8 @@ func (s *Server) CreateAgentIdentity(ctx context.Context, req *zitimanagementv1.
 		IdentityID:     agentID,
 		WorkloadID:     &workloadID,
 		IdentityType:   store.IdentityTypeAgentInstance,
+		AgentID:        agentClassID,
+		EnvironmentID:  environmentID,
 	}
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
 		s.cleanupZitiIdentity(ctx, zitiID, "ziti identity")
@@ -146,11 +159,13 @@ func (s *Server) CreateSandboxIdentity(ctx context.Context, req *zitimanagementv
 		return nil, status.Errorf(codes.Internal, "create sandbox ziti identity: %v", err)
 	}
 
+	// No AgentID: a sandbox runs an environment with no agent behind it.
 	identity := store.ManagedIdentity{
 		ZitiIdentityID: zitiID,
 		IdentityID:     sandboxID,
 		WorkloadID:     &workloadID,
 		IdentityType:   store.IdentityTypeSandbox,
+		EnvironmentID:  &environmentID,
 	}
 	if err := s.store.InsertManagedIdentity(ctx, identity); err != nil {
 		s.cleanupZitiIdentity(ctx, zitiID, "sandbox identity")
@@ -857,6 +872,14 @@ func resolveIdentityResponse(identity store.ManagedIdentity) (*zitimanagementv1.
 	if identity.WorkloadID != nil {
 		workloadID := identity.WorkloadID.String()
 		resp.WorkloadId = &workloadID
+	}
+	if identity.AgentID != nil {
+		agentID := identity.AgentID.String()
+		resp.AgentId = &agentID
+	}
+	if identity.EnvironmentID != nil {
+		environmentID := identity.EnvironmentID.String()
+		resp.EnvironmentId = &environmentID
 	}
 	return resp, nil
 }
