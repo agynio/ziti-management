@@ -26,6 +26,19 @@ func parseUUID(value string) (uuid.UUID, error) {
 	return id, nil
 }
 
+// parseOptionalUUID treats empty as absent rather than invalid, for fields an
+// older caller does not send at all.
+func parseOptionalUUID(value string) (*uuid.UUID, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
 func fromProtoIdentityType(value identityv1.IdentityType) (store.IdentityType, error) {
 	switch value {
 	case identityv1.IdentityType_IDENTITY_TYPE_AGENT:

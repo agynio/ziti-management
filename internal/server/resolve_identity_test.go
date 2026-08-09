@@ -125,6 +125,85 @@ func TestResolveIdentityIncludesWorkloadID(t *testing.T) {
 	}
 }
 
+func TestResolveIdentityIncludesAgentAndEnvironment(t *testing.T) {
+	ctx := context.Background()
+	workloadID := uuid.New()
+	agentClassID := uuid.New()
+	environmentID := uuid.New()
+	storeClient := &resolveIdentityStore{
+		identity: store.ManagedIdentity{
+			ZitiIdentityID: "ziti-identity",
+			IdentityID:     uuid.New(),
+			WorkloadID:     &workloadID,
+			IdentityType:   store.IdentityTypeAgentInstance,
+			AgentID:        &agentClassID,
+			EnvironmentID:  &environmentID,
+		},
+	}
+	server := New(storeClient, &fakeZitiClient{}, time.Minute, false)
+
+	resp, err := server.ResolveIdentity(ctx, &zitimanagementv1.ResolveIdentityRequest{ZitiIdentityId: "ziti-identity"})
+	if err != nil {
+		t.Fatalf("resolve identity: %v", err)
+	}
+	if resp.GetAgentId() != agentClassID.String() {
+		t.Fatalf("expected agent id %s, got %s", agentClassID, resp.GetAgentId())
+	}
+	if resp.GetEnvironmentId() != environmentID.String() {
+		t.Fatalf("expected environment id %s, got %s", environmentID, resp.GetEnvironmentId())
+	}
+}
+
+// A sandbox runs an environment with no agent behind it, so the environment
+// must resolve and the agent must stay absent rather than resolving to zero.
+func TestResolveIdentitySandboxHasEnvironmentWithoutAgent(t *testing.T) {
+	ctx := context.Background()
+	workloadID := uuid.New()
+	environmentID := uuid.New()
+	storeClient := &resolveIdentityStore{
+		identity: store.ManagedIdentity{
+			ZitiIdentityID: "ziti-identity",
+			IdentityID:     uuid.New(),
+			WorkloadID:     &workloadID,
+			IdentityType:   store.IdentityTypeSandbox,
+			EnvironmentID:  &environmentID,
+		},
+	}
+	server := New(storeClient, &fakeZitiClient{}, time.Minute, false)
+
+	resp, err := server.ResolveIdentity(ctx, &zitimanagementv1.ResolveIdentityRequest{ZitiIdentityId: "ziti-identity"})
+	if err != nil {
+		t.Fatalf("resolve identity: %v", err)
+	}
+	if resp.AgentId != nil {
+		t.Fatalf("expected no agent id, got %s", resp.GetAgentId())
+	}
+	if resp.GetEnvironmentId() != environmentID.String() {
+		t.Fatalf("expected environment id %s, got %s", environmentID, resp.GetEnvironmentId())
+	}
+}
+
+// Identities minted before the columns existed resolve with both absent.
+func TestResolveIdentityOmitsUnrecordedAgentAndEnvironment(t *testing.T) {
+	ctx := context.Background()
+	storeClient := &resolveIdentityStore{
+		identity: store.ManagedIdentity{
+			ZitiIdentityID: "ziti-identity",
+			IdentityID:     uuid.New(),
+			IdentityType:   store.IdentityTypeAgent,
+		},
+	}
+	server := New(storeClient, &fakeZitiClient{}, time.Minute, false)
+
+	resp, err := server.ResolveIdentity(ctx, &zitimanagementv1.ResolveIdentityRequest{ZitiIdentityId: "ziti-identity"})
+	if err != nil {
+		t.Fatalf("resolve identity: %v", err)
+	}
+	if resp.AgentId != nil || resp.EnvironmentId != nil {
+		t.Fatalf("expected both absent, got agent=%v environment=%v", resp.AgentId, resp.EnvironmentId)
+	}
+}
+
 func TestResolveIdentityNameFallbackDisabled(t *testing.T) {
 	ctx := context.Background()
 	storeClient := &resolveIdentityFallbackStore{

@@ -429,6 +429,56 @@ func TestCreateAgentIdentityStoresWorkloadID(t *testing.T) {
 	}
 }
 
+func TestCreateAgentIdentityStoresAgentClassAndEnvironment(t *testing.T) {
+	ctx := context.Background()
+	instanceID := uuid.New()
+	agentClassID := uuid.New()
+	environmentID := uuid.New()
+	storeClient := newFakeManagedIdentityStore()
+	server := New(storeClient, &fakeZitiClient{}, time.Minute, false)
+
+	_, err := server.CreateAgentIdentity(ctx, &zitimanagementv1.CreateAgentIdentityRequest{
+		AgentId:       instanceID.String(),
+		WorkloadId:    uuid.New().String(),
+		AgentClassId:  agentClassID.String(),
+		EnvironmentId: environmentID.String(),
+	})
+	if err != nil {
+		t.Fatalf("create agent identity: %v", err)
+	}
+	stored, ok := storeClient.managed[instanceID]
+	if !ok {
+		t.Fatalf("expected managed identity for %s", instanceID)
+	}
+	if stored.AgentID == nil || *stored.AgentID != agentClassID {
+		t.Fatalf("expected agent class id %s, got %v", agentClassID, stored.AgentID)
+	}
+	if stored.EnvironmentID == nil || *stored.EnvironmentID != environmentID {
+		t.Fatalf("expected environment id %s, got %v", environmentID, stored.EnvironmentID)
+	}
+}
+
+// An orchestrator that has not been updated yet sends neither, and its
+// identities must still enroll.
+func TestCreateAgentIdentityWithoutAgentClassOrEnvironment(t *testing.T) {
+	ctx := context.Background()
+	instanceID := uuid.New()
+	storeClient := newFakeManagedIdentityStore()
+	server := New(storeClient, &fakeZitiClient{}, time.Minute, false)
+
+	_, err := server.CreateAgentIdentity(ctx, &zitimanagementv1.CreateAgentIdentityRequest{
+		AgentId:    instanceID.String(),
+		WorkloadId: uuid.New().String(),
+	})
+	if err != nil {
+		t.Fatalf("create agent identity: %v", err)
+	}
+	stored := storeClient.managed[instanceID]
+	if stored.AgentID != nil || stored.EnvironmentID != nil {
+		t.Fatalf("expected both absent, got agent=%v environment=%v", stored.AgentID, stored.EnvironmentID)
+	}
+}
+
 func TestCreateSandboxIdentityStoresSandboxWorkloadID(t *testing.T) {
 	ctx := context.Background()
 	sandboxID := uuid.New()
@@ -476,6 +526,12 @@ func TestCreateSandboxIdentityStoresSandboxWorkloadID(t *testing.T) {
 	}
 	if *stored.WorkloadID != workloadID {
 		t.Fatalf("expected workload id %s, got %s", workloadID, *stored.WorkloadID)
+	}
+	if stored.EnvironmentID == nil || *stored.EnvironmentID != environmentID {
+		t.Fatalf("expected environment id %s, got %v", environmentID, stored.EnvironmentID)
+	}
+	if stored.AgentID != nil {
+		t.Fatalf("expected no agent id on a sandbox, got %s", stored.AgentID)
 	}
 }
 
