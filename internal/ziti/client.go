@@ -59,6 +59,7 @@ type configService interface {
 	CreateConfig(params *config.CreateConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.CreateConfigCreated, error)
 	DeleteConfig(params *config.DeleteConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.DeleteConfigOK, error)
 	PatchConfig(params *config.PatchConfigParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.PatchConfigOK, error)
+	ListConfigs(params *config.ListConfigsParams, authInfo runtime.ClientAuthInfoWriter, opts ...config.ClientOption) (*config.ListConfigsOK, error)
 }
 
 type servicePolicyService interface {
@@ -306,15 +307,16 @@ func mapFromTags(tags *rest_model.Tags) map[string]string {
 	return values
 }
 
-func tagFilter(tags map[string]string) string {
-	if len(tags) == 0 {
-		return ""
+// Ziti's filter grammar reads dots as field navigation, so a server-side
+// filter can never match a flat tag key that contains one ("agyn.managed_by"):
+// it returns 200 with zero rows. Tags are matched here instead.
+func matchesTags(actual, required map[string]string) bool {
+	for key, value := range required {
+		if actual[key] != value {
+			return false
+		}
 	}
-	filters := make([]string, 0, len(tags))
-	for key, value := range tags {
-		filters = append(filters, fmt.Sprintf("tags.%s=%s", key, strconv.Quote(value)))
-	}
-	return strings.Join(filters, " and ")
+	return true
 }
 
 func serviceFilter(filter ServiceListFilter) string {
@@ -533,13 +535,14 @@ func (c *Client) CreateDeviceIdentityWithOptions(ctx context.Context, userIdenti
 	identityType := rest_model.IdentityTypeDevice
 	isAdmin := false
 	roleAttrs := mergeRoleAttributes([]string{roleAttributeDevices, fmt.Sprintf("user-%s", userIdentityID.String())}, additionalRoleAttributes)
-	externalID := userIdentityID.String()
+	// No externalId: a user owns many devices, and Ziti unique-indexes it, so
+	// setting it to the user id caps every user at one device. The owner is
+	// carried by the user-<id> role attribute, which is what policies select on.
 	identityCreate := &rest_model.IdentityCreate{
 		Name:           &name,
 		Type:           &identityType,
 		IsAdmin:        &isAdmin,
 		RoleAttributes: &roleAttrs,
-		ExternalID:     &externalID,
 		Enrollment:     &rest_model.IdentityCreateEnrollment{Ott: true},
 		Tags:           tagsFromMap(tags),
 	}
@@ -570,6 +573,9 @@ func (c *Client) CreateServiceWithConfigsAndTags(ctx context.Context, name strin
 	}
 
 	configIDs := make([]string, 0, 2)
+	// Only configs this call created may be rolled back — deleting an adopted
+	// one would strip it from the live service that already owns it.
+	createdConfigIDs := make([]string, 0, 2)
 	if hostV1 != nil {
 		data := hostV1ConfigData(hostV1)
 		if len(hostV1.AllowedProtocols) > 0 {
@@ -581,11 +587,14 @@ func (c *Client) CreateServiceWithConfigsAndTags(ctx context.Context, name strin
 		if len(hostV1.AllowedPortRanges) > 0 {
 			data["allowedPortRanges"] = portRangeConfigData(hostV1.AllowedPortRanges)
 		}
-		configID, err := c.createConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), data, tags)
+		configID, adopted, err := c.createOrAdoptConfig(ctx, hostV1ConfigTypeID, fmt.Sprintf("%s-host-v1", name), data, tags)
 		if err != nil {
 			return "", err
 		}
 		configIDs = append(configIDs, configID)
+		if !adopted {
+			createdConfigIDs = append(createdConfigIDs, configID)
+		}
 	}
 	if interceptV1 != nil {
 		data := map[string]any{
@@ -593,16 +602,19 @@ func (c *Client) CreateServiceWithConfigsAndTags(ctx context.Context, name strin
 			"addresses":  interceptV1.Addresses,
 			"portRanges": portRangeConfigData(interceptV1.PortRanges),
 		}
-		configID, err := c.createConfig(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), data, tags)
+		configID, adopted, err := c.createOrAdoptConfig(ctx, interceptV1ConfigTypeID, fmt.Sprintf("%s-intercept-v1", name), data, tags)
 		if err != nil {
-			return "", c.cleanupConfigs(ctx, configIDs, err)
+			return "", c.cleanupConfigs(ctx, createdConfigIDs, err)
 		}
 		configIDs = append(configIDs, configID)
+		if !adopted {
+			createdConfigIDs = append(createdConfigIDs, configID)
+		}
 	}
 
 	serviceID, err := c.createService(ctx, name, roleAttributes, configIDs, tags)
 	if err != nil {
-		return "", c.cleanupConfigs(ctx, configIDs, err)
+		return "", c.cleanupConfigs(ctx, createdConfigIDs, err)
 	}
 	return serviceID, nil
 }
@@ -685,6 +697,71 @@ func (c *Client) createConfig(ctx context.Context, configTypeID, name string, da
 		}
 		return created.Payload, nil
 	})
+}
+
+// A create that dies between the config and the service leaves an orphan
+// config, and config names are unique — every later retry would conflict on it
+// forever. The name is derived from our own resource id, so adopt and rewrite
+// it rather than wedging.
+func (c *Client) createOrAdoptConfig(ctx context.Context, configTypeID, name string, data map[string]any, tags map[string]string) (string, bool, error) {
+	configID, createErr := c.createConfig(ctx, configTypeID, name, data, tags)
+	if createErr == nil {
+		return configID, false, nil
+	}
+	existingID, findErr := c.findConfigIDByName(ctx, name)
+	if findErr != nil || existingID == "" {
+		return "", false, createErr
+	}
+	params := config.NewPatchConfigParamsWithContext(ctx)
+	params.ID = existingID
+	params.Config = &rest_model.ConfigPatch{Data: data, Name: name, Tags: tagsFromMap(tags)}
+	if err := c.withReauth(func() error {
+		configClient := c.configClient()
+		_, callErr := configClient.PatchConfig(params, nil)
+		return callErr
+	}); err != nil {
+		return "", false, fmt.Errorf("adopt ziti config %s: %w", name, err)
+	}
+	return existingID, true, nil
+}
+
+// Adoption has to converge, not just hand back whatever is there: a service
+// created before a role attribute existed would otherwise never gain it, and
+// the policies selecting on that attribute would never match.
+func (c *Client) PatchServiceRoleAttributes(ctx context.Context, serviceID string, roleAttributes []string) error {
+	params := service.NewPatchServiceParamsWithContext(ctx)
+	params.ID = serviceID
+	params.Service = &rest_model.ServicePatch{RoleAttributes: roleAttributes}
+	if err := c.withReauth(func() error {
+		serviceClient := c.serviceClient()
+		_, callErr := serviceClient.PatchService(params, nil)
+		return callErr
+	}); err != nil {
+		return fmt.Errorf("patch ziti service role attributes: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) findConfigIDByName(ctx context.Context, name string) (string, error) {
+	filter := fmt.Sprintf("name = %s", strconv.Quote(name))
+	limit := int64(1)
+	params := config.NewListConfigsParamsWithContext(ctx)
+	params.Filter = &filter
+	params.Limit = &limit
+	var listed *config.ListConfigsOK
+	err := c.withReauth(func() error {
+		var callErr error
+		configClient := c.configClient()
+		listed, callErr = configClient.ListConfigs(params, nil)
+		return callErr
+	})
+	if err != nil {
+		return "", fmt.Errorf("list ziti configs: %w", err)
+	}
+	if listed.Payload == nil || len(listed.Payload.Data) == 0 || listed.Payload.Data[0].ID == nil {
+		return "", nil
+	}
+	return *listed.Payload.Data[0].ID, nil
 }
 
 func (c *Client) cleanupConfigs(ctx context.Context, configIDs []string, err error) error {
@@ -1077,31 +1154,42 @@ func (c *Client) ListIdentitiesByTag(ctx context.Context, tags map[string]string
 	if err != nil {
 		return ListResult[OpenZitiIdentity]{}, err
 	}
-	filter := tagFilter(tags)
-	params := identity.NewListIdentitiesParamsWithContext(ctx)
-	params.Limit = &limit
-	params.Offset = &offset
-	if filter != "" {
-		params.Filter = &filter
+	items := make([]OpenZitiIdentity, 0, limit)
+	currentOffset := offset
+	for {
+		params := identity.NewListIdentitiesParamsWithContext(ctx)
+		params.Limit = &limit
+		params.Offset = &currentOffset
+		var listed *identity.ListIdentitiesOK
+		err = c.withReauth(func() error {
+			var callErr error
+			identityClient := c.identityClient()
+			listed, callErr = identityClient.ListIdentities(params, nil)
+			return callErr
+		})
+		if err != nil {
+			return ListResult[OpenZitiIdentity]{}, fmt.Errorf("list ziti identities: %w", err)
+		}
+		if listed.Payload == nil {
+			return ListResult[OpenZitiIdentity]{}, errors.New("list ziti identities response missing payload")
+		}
+		for index, identityDetail := range listed.Payload.Data {
+			item := toOpenZitiIdentity(identityDetail)
+			if !matchesTags(item.Tags, tags) {
+				continue
+			}
+			items = append(items, item)
+			if int64(len(items)) == limit {
+				nextOffset := currentOffset + int64(index) + 1
+				return ListResult[OpenZitiIdentity]{Items: items, NextPageToken: pageTokenFromOffset(nextOffset, totalCount(listed.Payload.Meta))}, nil
+			}
+		}
+		nextOffset, ok := nextPageOffset(listed.Payload.Meta)
+		if !ok {
+			return ListResult[OpenZitiIdentity]{Items: items}, nil
+		}
+		currentOffset = nextOffset
 	}
-	var listed *identity.ListIdentitiesOK
-	err = c.withReauth(func() error {
-		var callErr error
-		identityClient := c.identityClient()
-		listed, callErr = identityClient.ListIdentities(params, nil)
-		return callErr
-	})
-	if err != nil {
-		return ListResult[OpenZitiIdentity]{}, fmt.Errorf("list ziti identities: %w", err)
-	}
-	if listed.Payload == nil {
-		return ListResult[OpenZitiIdentity]{}, errors.New("list ziti identities response missing payload")
-	}
-	items := make([]OpenZitiIdentity, 0, len(listed.Payload.Data))
-	for _, identityDetail := range listed.Payload.Data {
-		items = append(items, toOpenZitiIdentity(identityDetail))
-	}
-	return ListResult[OpenZitiIdentity]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
 }
 
 func (c *Client) ListServicesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ListResult[OpenZitiService], error) {
@@ -1109,31 +1197,42 @@ func (c *Client) ListServicesByTag(ctx context.Context, tags map[string]string, 
 	if err != nil {
 		return ListResult[OpenZitiService]{}, err
 	}
-	filter := tagFilter(tags)
-	params := service.NewListServicesParamsWithContext(ctx)
-	params.Limit = &limit
-	params.Offset = &offset
-	if filter != "" {
-		params.Filter = &filter
+	items := make([]OpenZitiService, 0, limit)
+	currentOffset := offset
+	for {
+		params := service.NewListServicesParamsWithContext(ctx)
+		params.Limit = &limit
+		params.Offset = &currentOffset
+		var listed *service.ListServicesOK
+		err = c.withReauth(func() error {
+			var callErr error
+			serviceClient := c.serviceClient()
+			listed, callErr = serviceClient.ListServices(params, nil)
+			return callErr
+		})
+		if err != nil {
+			return ListResult[OpenZitiService]{}, fmt.Errorf("list ziti services: %w", err)
+		}
+		if listed.Payload == nil {
+			return ListResult[OpenZitiService]{}, errors.New("list ziti services response missing payload")
+		}
+		for index, serviceDetail := range listed.Payload.Data {
+			item := toOpenZitiService(serviceDetail)
+			if !matchesTags(item.Tags, tags) {
+				continue
+			}
+			items = append(items, item)
+			if int64(len(items)) == limit {
+				nextOffset := currentOffset + int64(index) + 1
+				return ListResult[OpenZitiService]{Items: items, NextPageToken: pageTokenFromOffset(nextOffset, totalCount(listed.Payload.Meta))}, nil
+			}
+		}
+		nextOffset, ok := nextPageOffset(listed.Payload.Meta)
+		if !ok {
+			return ListResult[OpenZitiService]{Items: items}, nil
+		}
+		currentOffset = nextOffset
 	}
-	var listed *service.ListServicesOK
-	err = c.withReauth(func() error {
-		var callErr error
-		serviceClient := c.serviceClient()
-		listed, callErr = serviceClient.ListServices(params, nil)
-		return callErr
-	})
-	if err != nil {
-		return ListResult[OpenZitiService]{}, fmt.Errorf("list ziti services: %w", err)
-	}
-	if listed.Payload == nil {
-		return ListResult[OpenZitiService]{}, errors.New("list ziti services response missing payload")
-	}
-	items := make([]OpenZitiService, 0, len(listed.Payload.Data))
-	for _, serviceDetail := range listed.Payload.Data {
-		items = append(items, toOpenZitiService(serviceDetail))
-	}
-	return ListResult[OpenZitiService]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
 }
 
 func (c *Client) ListServicePoliciesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ListResult[OpenZitiServicePolicy], error) {
@@ -1141,31 +1240,42 @@ func (c *Client) ListServicePoliciesByTag(ctx context.Context, tags map[string]s
 	if err != nil {
 		return ListResult[OpenZitiServicePolicy]{}, err
 	}
-	filter := tagFilter(tags)
-	params := service_policy.NewListServicePoliciesParamsWithContext(ctx)
-	params.Limit = &limit
-	params.Offset = &offset
-	if filter != "" {
-		params.Filter = &filter
+	items := make([]OpenZitiServicePolicy, 0, limit)
+	currentOffset := offset
+	for {
+		params := service_policy.NewListServicePoliciesParamsWithContext(ctx)
+		params.Limit = &limit
+		params.Offset = &currentOffset
+		var listed *service_policy.ListServicePoliciesOK
+		err = c.withReauth(func() error {
+			var callErr error
+			servicePolicyClient := c.servicePolicyClient()
+			listed, callErr = servicePolicyClient.ListServicePolicies(params, nil)
+			return callErr
+		})
+		if err != nil {
+			return ListResult[OpenZitiServicePolicy]{}, fmt.Errorf("list ziti service policies: %w", err)
+		}
+		if listed.Payload == nil {
+			return ListResult[OpenZitiServicePolicy]{}, errors.New("list ziti service policies response missing payload")
+		}
+		for index, policyDetail := range listed.Payload.Data {
+			item := toOpenZitiServicePolicy(policyDetail)
+			if !matchesTags(item.Tags, tags) {
+				continue
+			}
+			items = append(items, item)
+			if int64(len(items)) == limit {
+				nextOffset := currentOffset + int64(index) + 1
+				return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: pageTokenFromOffset(nextOffset, totalCount(listed.Payload.Meta))}, nil
+			}
+		}
+		nextOffset, ok := nextPageOffset(listed.Payload.Meta)
+		if !ok {
+			return ListResult[OpenZitiServicePolicy]{Items: items}, nil
+		}
+		currentOffset = nextOffset
 	}
-	var listed *service_policy.ListServicePoliciesOK
-	err = c.withReauth(func() error {
-		var callErr error
-		servicePolicyClient := c.servicePolicyClient()
-		listed, callErr = servicePolicyClient.ListServicePolicies(params, nil)
-		return callErr
-	})
-	if err != nil {
-		return ListResult[OpenZitiServicePolicy]{}, fmt.Errorf("list ziti service policies: %w", err)
-	}
-	if listed.Payload == nil {
-		return ListResult[OpenZitiServicePolicy]{}, errors.New("list ziti service policies response missing payload")
-	}
-	items := make([]OpenZitiServicePolicy, 0, len(listed.Payload.Data))
-	for _, policyDetail := range listed.Payload.Data {
-		items = append(items, toOpenZitiServicePolicy(policyDetail))
-	}
-	return ListResult[OpenZitiServicePolicy]{Items: items, NextPageToken: nextPageToken(listed.Payload.Meta)}, nil
 }
 
 func (c *Client) UpdateService(ctx context.Context, serviceID string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData, tags map[string]string, updateTags bool) (OpenZitiService, error) {
