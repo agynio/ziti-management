@@ -41,6 +41,7 @@ type zitiClient interface {
 	CreateAndEnrollRunnerIdentityWithTags(ctx context.Context, runnerID uuid.UUID, roleAttributes []string, tags map[string]string) (string, []byte, error)
 	CreateAndEnrollServiceIdentity(ctx context.Context, name string, roleAttributes []string) (string, []byte, error)
 	CreateService(ctx context.Context, name string, roleAttributes []string) (string, error)
+	PatchServiceRoleAttributes(ctx context.Context, serviceID string, roleAttributes []string) error
 	CreateServiceWithConfigs(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData) (string, error)
 	CreateServiceWithConfigsAndTags(ctx context.Context, name string, roleAttributes []string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData, tags map[string]string) (string, error)
 	GetService(ctx context.Context, serviceID string) (ziti.OpenZitiService, error)
@@ -244,6 +245,9 @@ func (s *Server) CreateService(ctx context.Context, req *zitimanagementv1.Create
 		if req.GetReturnExisting() {
 			service, getErr := s.getServiceByName(ctx, name)
 			if getErr == nil {
+				if patchErr := s.ziti.PatchServiceRoleAttributes(ctx, service.ID, roleAttributes); patchErr != nil {
+					return nil, status.Errorf(codes.Internal, "adopt ziti service: %v", patchErr)
+				}
 				return &zitimanagementv1.CreateServiceResponse{ZitiServiceId: service.ID, ZitiServiceName: service.Name}, nil
 			}
 		}

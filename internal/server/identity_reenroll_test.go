@@ -81,6 +81,14 @@ type fakeZitiClient struct {
 	patchIdentityCall *patchIdentityCall
 	tunnelExpiresAt   time.Time
 	deleteIdentityErr error
+
+	patchedServiceRoles  []patchedServiceRoles
+	patchServiceRolesErr error
+}
+
+type patchedServiceRoles struct {
+	ServiceID      string
+	RoleAttributes []string
 }
 
 type patchIdentityCall struct {
@@ -150,6 +158,11 @@ func (f *fakeZitiClient) CreateAndEnrollServiceIdentity(_ context.Context, _ str
 
 func (f *fakeZitiClient) CreateService(_ context.Context, _ string, _ []string) (string, error) {
 	return "", errors.New("unexpected create service")
+}
+
+func (f *fakeZitiClient) PatchServiceRoleAttributes(_ context.Context, serviceID string, roleAttributes []string) error {
+	f.patchedServiceRoles = append(f.patchedServiceRoles, patchedServiceRoles{ServiceID: serviceID, RoleAttributes: roleAttributes})
+	return f.patchServiceRolesErr
 }
 
 func (f *fakeZitiClient) CreateServiceWithConfigs(_ context.Context, _ string, _ []string, _ *ziti.HostV1ConfigData, _ *ziti.InterceptV1ConfigData) (string, error) {

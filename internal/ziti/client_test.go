@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -121,6 +120,7 @@ type fakeConfigService struct {
 	createConfigFunc func(params *config.CreateConfigParams) (*config.CreateConfigCreated, error)
 	deleteConfigFunc func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error)
 	patchConfigFunc  func(params *config.PatchConfigParams) (*config.PatchConfigOK, error)
+	listConfigsFunc  func(params *config.ListConfigsParams) (*config.ListConfigsOK, error)
 }
 
 func (f *fakeConfigService) CreateConfig(params *config.CreateConfigParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.CreateConfigCreated, error) {
@@ -142,6 +142,13 @@ func (f *fakeConfigService) PatchConfig(params *config.PatchConfigParams, _ runt
 		return nil, errors.New("patch config not stubbed")
 	}
 	return f.patchConfigFunc(params)
+}
+
+func (f *fakeConfigService) ListConfigs(params *config.ListConfigsParams, _ runtime.ClientAuthInfoWriter, _ ...config.ClientOption) (*config.ListConfigsOK, error) {
+	if f.listConfigsFunc == nil {
+		return nil, errors.New("list configs not stubbed")
+	}
+	return f.listConfigsFunc(params)
 }
 
 type fakeServicePolicyService struct {
@@ -774,57 +781,80 @@ func TestListServicesTokenResumesInsideFetchedPage(t *testing.T) {
 	}
 }
 
-func TestListServicesByTagConvertsRequestAndResponse(t *testing.T) {
+// Dotted tag keys are unmatchable server-side, so the filter must stay off the
+// wire and paging must continue past pages that hold no match.
+func TestListServicesByTagMatchesTagsClientSideAcrossPages(t *testing.T) {
 	ctx := context.Background()
+	otherID := "other-id"
 	serviceID := "service-id"
 	serviceName := "service-name"
 	roles := rest_model.Attributes{"role-one"}
+	calls := 0
 	fake := &fakeServiceService{
 		listServicesFunc: func(params *service.ListServicesParams) (*service.ListServicesOK, error) {
-			if params == nil || params.Filter == nil || !strings.Contains(*params.Filter, "tags.owner=") {
+			if params == nil || params.Filter != nil {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
-			if params.Limit == nil || *params.Limit != 10 || params.Offset == nil || *params.Offset != 20 {
+			calls++
+			if calls == 1 {
+				if params.Offset == nil || *params.Offset != 0 {
+					t.Fatalf("unexpected pagination: %#v", params)
+				}
+				return listServicesResponse([]*rest_model.ServiceDetail{{
+					BaseEntity:     rest_model.BaseEntity{ID: &otherID, Tags: tagsFromMap(map[string]string{"agyn.managed_by": "someone-else"})},
+					Name:           &serviceName,
+					RoleAttributes: &roles,
+				}}, 10, 0, 11), nil
+			}
+			if params.Offset == nil || *params.Offset != 10 {
 				t.Fatalf("unexpected pagination: %#v", params)
 			}
 			return listServicesResponse([]*rest_model.ServiceDetail{{
-				BaseEntity:     rest_model.BaseEntity{ID: &serviceID, Tags: tagsFromMap(map[string]string{"owner": "networks"})},
+				BaseEntity:     rest_model.BaseEntity{ID: &serviceID, Tags: tagsFromMap(map[string]string{"agyn.managed_by": "networks-service"})},
 				Name:           &serviceName,
 				RoleAttributes: &roles,
-			}}, 10, 20, 31), nil
+			}}, 10, 10, 11), nil
 		},
 	}
 
 	client := &Client{service: fake}
-	result, err := client.ListServicesByTag(ctx, map[string]string{"owner": "networks"}, 10, "20")
+	result, err := client.ListServicesByTag(ctx, map[string]string{"agyn.managed_by": "networks-service"}, 10, "")
 	if err != nil {
 		t.Fatalf("list services by tag: %v", err)
 	}
-	if result.NextPageToken != "30" || len(result.Items) != 1 || result.Items[0].ID != serviceID {
+	if calls != 2 {
+		t.Fatalf("expected paging past the unmatched page, got %d calls", calls)
+	}
+	if result.NextPageToken != "" || len(result.Items) != 1 || result.Items[0].ID != serviceID {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 }
 
-func TestListIdentitiesByTagConvertsRequestAndResponse(t *testing.T) {
+func TestListIdentitiesByTagMatchesTagsClientSide(t *testing.T) {
 	ctx := context.Background()
+	otherID := "other-id"
 	identityID := "identity-id"
 	identityName := "identity-name"
 	roles := rest_model.Attributes{"role-one"}
 	fake := &fakeIdentityService{
 		listIdentitiesFunc: func(params *identity.ListIdentitiesParams) (*identity.ListIdentitiesOK, error) {
-			if params == nil || params.Filter == nil || !strings.Contains(*params.Filter, "tags.owner=") {
+			if params == nil || params.Filter != nil {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
 			return listIdentityDetailsResponse([]*rest_model.IdentityDetail{{
-				BaseEntity:     rest_model.BaseEntity{ID: &identityID, Tags: tagsFromMap(map[string]string{"owner": "networks"})},
+				BaseEntity:     rest_model.BaseEntity{ID: &otherID, Tags: tagsFromMap(map[string]string{"agyn.managed_by": "someone-else"})},
 				Name:           &identityName,
 				RoleAttributes: &roles,
-			}}, 50, 0, 1), nil
+			}, {
+				BaseEntity:     rest_model.BaseEntity{ID: &identityID, Tags: tagsFromMap(map[string]string{"agyn.managed_by": "networks-service"})},
+				Name:           &identityName,
+				RoleAttributes: &roles,
+			}}, 50, 0, 2), nil
 		},
 	}
 
 	client := &Client{identity: fake}
-	result, err := client.ListIdentitiesByTag(ctx, map[string]string{"owner": "networks"}, 0, "")
+	result, err := client.ListIdentitiesByTag(ctx, map[string]string{"agyn.managed_by": "networks-service"}, 0, "")
 	if err != nil {
 		t.Fatalf("list identities by tag: %v", err)
 	}
@@ -833,28 +863,35 @@ func TestListIdentitiesByTagConvertsRequestAndResponse(t *testing.T) {
 	}
 }
 
-func TestListServicePoliciesByTagConvertsRequestAndResponse(t *testing.T) {
+func TestListServicePoliciesByTagMatchesTagsClientSide(t *testing.T) {
 	ctx := context.Background()
+	otherID := "other-id"
 	policyID := "policy-id"
 	policyName := "policy-name"
 	policyType := rest_model.DialBindDial
 	fake := &fakeServicePolicyService{
 		listServicePoliciesFunc: func(params *service_policy.ListServicePoliciesParams) (*service_policy.ListServicePoliciesOK, error) {
-			if params == nil || params.Filter == nil || !strings.Contains(*params.Filter, "tags.owner=") {
+			if params == nil || params.Filter != nil {
 				t.Fatalf("unexpected filter: %#v", params)
 			}
 			return listServicePoliciesResponse([]*rest_model.ServicePolicyDetail{{
-				BaseEntity:    rest_model.BaseEntity{ID: &policyID, Tags: tagsFromMap(map[string]string{"owner": "networks"})},
+				BaseEntity:    rest_model.BaseEntity{ID: &otherID, Tags: tagsFromMap(map[string]string{"agyn.managed_by": "someone-else"})},
 				Name:          &policyName,
 				Type:          &policyType,
 				IdentityRoles: rest_model.Roles{"#identity"},
 				ServiceRoles:  rest_model.Roles{"#service"},
-			}}, 10, 0, 1), nil
+			}, {
+				BaseEntity:    rest_model.BaseEntity{ID: &policyID, Tags: tagsFromMap(map[string]string{"agyn.managed_by": "networks-service"})},
+				Name:          &policyName,
+				Type:          &policyType,
+				IdentityRoles: rest_model.Roles{"#identity"},
+				ServiceRoles:  rest_model.Roles{"#service"},
+			}}, 10, 0, 2), nil
 		},
 	}
 
 	client := &Client{servicePolicy: fake}
-	result, err := client.ListServicePoliciesByTag(ctx, map[string]string{"owner": "networks"}, 10, "")
+	result, err := client.ListServicePoliciesByTag(ctx, map[string]string{"agyn.managed_by": "networks-service"}, 10, "")
 	if err != nil {
 		t.Fatalf("list service policies by tag: %v", err)
 	}
@@ -1404,6 +1441,58 @@ func TestCreateServiceWithConfigs(t *testing.T) {
 		}
 	})
 
+	// An interrupted create leaves an orphan config whose name is taken; every
+	// later retry conflicts on it unless we adopt it.
+	t.Run("adopts an orphaned config left by an interrupted create", func(t *testing.T) {
+		serviceID := "service-id"
+		existingConfigID := "orphan-config-id"
+		patched := false
+		fakeService := &fakeServiceService{
+			createServiceFunc: func(params *service.CreateServiceParams) (*service.CreateServiceCreated, error) {
+				if len(params.Service.Configs) != 1 || params.Service.Configs[0] != existingConfigID {
+					t.Fatalf("expected the adopted config to be attached, got %#v", params.Service.Configs)
+				}
+				return createServiceResponse(serviceID), nil
+			},
+		}
+		fakeConfig := &fakeConfigService{
+			createConfigFunc: func(_ *config.CreateConfigParams) (*config.CreateConfigCreated, error) {
+				return nil, errors.New("name must be unique")
+			},
+			listConfigsFunc: func(params *config.ListConfigsParams) (*config.ListConfigsOK, error) {
+				if params.Filter == nil || *params.Filter != `name = "my-service-host-v1"` {
+					t.Fatalf("unexpected filter: %#v", params.Filter)
+				}
+				return &config.ListConfigsOK{Payload: &rest_model.ListConfigsEnvelope{
+					Data: []*rest_model.ConfigDetail{{BaseEntity: rest_model.BaseEntity{ID: &existingConfigID}}},
+				}}, nil
+			},
+			patchConfigFunc: func(params *config.PatchConfigParams) (*config.PatchConfigOK, error) {
+				if params.ID != existingConfigID {
+					t.Fatalf("unexpected patch target: %s", params.ID)
+				}
+				patched = true
+				return &config.PatchConfigOK{}, nil
+			},
+			deleteConfigFunc: func(params *config.DeleteConfigParams) (*config.DeleteConfigOK, error) {
+				t.Fatalf("adopted config must not be deleted: %#v", params)
+				return nil, nil
+			},
+		}
+
+		client := &Client{service: fakeService, config: fakeConfig}
+		got, err := client.CreateServiceWithConfigs(ctx, "my-service", []string{"role"}, &HostV1ConfigData{Protocol: "tcp", Address: "127.0.0.1", Port: 8080}, nil)
+		if err != nil {
+			t.Fatalf("create service with configs: %v", err)
+		}
+		if !patched {
+			t.Fatal("expected the orphaned config to be rewritten")
+		}
+		if got != serviceID {
+			t.Fatalf("expected service id %q, got %q", serviceID, got)
+		}
+	})
+
 	t.Run("creates configs", func(t *testing.T) {
 		host := &HostV1ConfigData{
 			Protocol:          "tcp",
@@ -1736,6 +1825,35 @@ func TestDeleteServicePolicy(t *testing.T) {
 	})
 }
 
+// Ziti rejects a duplicate externalId, so a second device for the same user has
+// to go out carrying nothing that collides with the first.
+func TestCreateDeviceIdentityAllowsSeveralDevicesPerUser(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+	var names []string
+
+	fake := &fakeIdentityService{
+		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
+			assertNoCreateExternalID(t, params)
+			names = append(names, *params.Identity.Name)
+			return createIdentityResponse("created-id"), nil
+		},
+		detailIdentityFunc: func(_ *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
+			return detailIdentityResponse("jwt-token"), nil
+		},
+	}
+
+	client := &Client{identity: fake}
+	for _, name := range []string{"laptop", "phone"} {
+		if _, _, err := client.CreateDeviceIdentity(ctx, userID, name); err != nil {
+			t.Fatalf("create device identity %q: %v", name, err)
+		}
+	}
+	if !reflect.DeepEqual(names, []string{"laptop", "phone"}) {
+		t.Fatalf("expected both devices created, got %#v", names)
+	}
+}
+
 func TestCreateDeviceIdentity(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.New()
@@ -1744,7 +1862,7 @@ func TestCreateDeviceIdentity(t *testing.T) {
 
 	fake := &fakeIdentityService{
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			assertCreateExternalID(t, params, userID)
+			assertNoCreateExternalID(t, params)
 			if params == nil || params.Identity == nil || params.Identity.Name == nil {
 				t.Fatalf("expected identity name")
 			}
@@ -1785,7 +1903,7 @@ func TestCreateDeviceIdentityWithOptionsAddsUserAndGroupRoles(t *testing.T) {
 	userID := uuid.New()
 	fake := &fakeIdentityService{
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			assertCreateExternalID(t, params, userID)
+			assertNoCreateExternalID(t, params)
 			assertCreateDeviceRoleAttributes(t, params, userID, "group-one", "group-two")
 			assertTags(t, params.Identity.Tags, map[string]string{"owner": "users"})
 			return createIdentityResponse("created-id"), nil
@@ -1846,7 +1964,7 @@ func TestCreateDeviceIdentityCreateFailure(t *testing.T) {
 
 	fake := &fakeIdentityService{
 		createIdentityFunc: func(params *identity.CreateIdentityParams) (*identity.CreateIdentityCreated, error) {
-			assertCreateExternalID(t, params, userID)
+			assertNoCreateExternalID(t, params)
 			return nil, createErr
 		},
 		detailIdentityFunc: func(params *identity.DetailIdentityParams) (*identity.DetailIdentityOK, error) {
@@ -1865,6 +1983,18 @@ func TestCreateDeviceIdentityCreateFailure(t *testing.T) {
 	}
 	if detailCalled {
 		t.Fatalf("expected detail not called")
+	}
+}
+
+// Devices are many-per-user and Ziti unique-indexes externalId, so claiming the
+// user id there would cap every user at one device.
+func assertNoCreateExternalID(t *testing.T, params *identity.CreateIdentityParams) {
+	t.Helper()
+	if params == nil || params.Identity == nil {
+		t.Fatalf("expected identity create params")
+	}
+	if params.Identity.ExternalID != nil {
+		t.Fatalf("expected no external id, got %q", *params.Identity.ExternalID)
 	}
 }
 
