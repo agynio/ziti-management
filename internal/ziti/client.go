@@ -1278,7 +1278,7 @@ func (c *Client) ListServicePoliciesByTag(ctx context.Context, tags map[string]s
 	}
 }
 
-func (c *Client) UpdateService(ctx context.Context, serviceID string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData, tags map[string]string, updateTags bool) (OpenZitiService, error) {
+func (c *Client) UpdateService(ctx context.Context, serviceID string, hostV1 *HostV1ConfigData, interceptV1 *InterceptV1ConfigData, tags map[string]string, updateTags bool, roleAttributes []string, updateRoleAttributes bool) (OpenZitiService, error) {
 	detail, err := c.detailService(ctx, serviceID)
 	if err != nil {
 		return OpenZitiService{}, err
@@ -1319,6 +1319,9 @@ func (c *Client) UpdateService(ctx context.Context, serviceID string, hostV1 *Ho
 	}
 	if updateTags {
 		patch.Tags = tagsFromMap(tags)
+	}
+	if updateRoleAttributes {
+		patch.RoleAttributes = roleAttributes
 	}
 	params := service.NewPatchServiceParamsWithContext(ctx)
 	params.ID = serviceID

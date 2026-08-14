@@ -61,7 +61,7 @@ type zitiClient interface {
 	ListServicesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiService], error)
 	ListIdentitiesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiIdentity], error)
 	ListServicePoliciesByTag(ctx context.Context, tags map[string]string, pageSize int32, pageToken string) (ziti.ListResult[ziti.OpenZitiServicePolicy], error)
-	UpdateService(ctx context.Context, serviceID string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData, tags map[string]string, updateTags bool) (ziti.OpenZitiService, error)
+	UpdateService(ctx context.Context, serviceID string, hostV1 *ziti.HostV1ConfigData, interceptV1 *ziti.InterceptV1ConfigData, tags map[string]string, updateTags bool, roleAttributes []string, updateRoleAttributes bool) (ziti.OpenZitiService, error)
 }
 
 type Server struct {
@@ -770,7 +770,13 @@ func (s *Server) UpdateService(ctx context.Context, req *zitimanagementv1.Update
 		tags = req.GetTagsUpdate().GetTags()
 		updateTags = true
 	}
-	updated, err := s.ziti.UpdateService(ctx, serviceID, hostV1Config, interceptV1Config, tags, updateTags)
+	var roleAttributes []string
+	updateRoleAttributes := false
+	if req.GetRoleAttributesUpdate() != nil {
+		roleAttributes = req.GetRoleAttributesUpdate().GetRoleAttributes()
+		updateRoleAttributes = true
+	}
+	updated, err := s.ziti.UpdateService(ctx, serviceID, hostV1Config, interceptV1Config, tags, updateTags, roleAttributes, updateRoleAttributes)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "update ziti service: %v", err)
 	}
