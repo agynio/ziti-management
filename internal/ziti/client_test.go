@@ -1242,7 +1242,7 @@ func TestUpdateServicePatchesConfigsAndTags(t *testing.T) {
 	}
 
 	client := &Client{service: fakeService, config: fakeConfig}
-	updated, err := client.UpdateService(ctx, serviceID, &HostV1ConfigData{Protocol: "tcp", Address: "127.0.0.1", Port: 8080}, nil, map[string]string{"owner": "networks"}, true)
+	updated, err := client.UpdateService(ctx, serviceID, &HostV1ConfigData{Protocol: "tcp", Address: "127.0.0.1", Port: 8080}, nil, map[string]string{"owner": "networks"}, true, nil, false)
 	if err != nil {
 		t.Fatalf("update service: %v", err)
 	}
@@ -1320,7 +1320,7 @@ func TestUpdateServiceForwardingHostConfigOmitsDestinationFields(t *testing.T) {
 	}
 
 	client := &Client{service: fakeService, config: fakeConfig}
-	if _, err := client.UpdateService(ctx, serviceID, host, nil, nil, false); err != nil {
+	if _, err := client.UpdateService(ctx, serviceID, host, nil, nil, false, nil, false); err != nil {
 		t.Fatalf("update service: %v", err)
 	}
 }
@@ -1361,7 +1361,40 @@ func TestUpdateServiceTagOnlyDoesNotPatchConfigs(t *testing.T) {
 	}
 
 	client := &Client{service: fakeService, config: fakeConfig}
-	if _, err := client.UpdateService(ctx, serviceID, nil, nil, map[string]string{"owner": "networks"}, true); err != nil {
+	if _, err := client.UpdateService(ctx, serviceID, nil, nil, map[string]string{"owner": "networks"}, true, nil, false); err != nil {
+		t.Fatalf("update service: %v", err)
+	}
+}
+
+func TestUpdateServicePatchesRoleAttributes(t *testing.T) {
+	ctx := context.Background()
+	serviceID := "service-id"
+	serviceName := "service-name"
+	roles := rest_model.Attributes{"network-resources-net"}
+	fakeService := &fakeServiceService{
+		detailServiceFunc: func(params *service.DetailServiceParams) (*service.DetailServiceOK, error) {
+			return &service.DetailServiceOK{Payload: &rest_model.DetailServiceEnvelope{Data: &rest_model.ServiceDetail{
+				BaseEntity:     rest_model.BaseEntity{ID: &serviceID},
+				Name:           &serviceName,
+				RoleAttributes: &roles,
+			}}}, nil
+		},
+		patchServiceFunc: func(params *service.PatchServiceParams) (*service.PatchServiceOK, error) {
+			if params == nil || params.Service == nil {
+				t.Fatalf("expected patch service")
+			}
+			if !reflect.DeepEqual([]string(params.Service.RoleAttributes), []string{"egress-services", "private-resource-id"}) {
+				t.Fatalf("unexpected role attributes: %#v", params.Service.RoleAttributes)
+			}
+			if params.Service.Configs != nil {
+				t.Fatalf("role-only update must not patch configs: %#v", params.Service.Configs)
+			}
+			return &service.PatchServiceOK{}, nil
+		},
+	}
+
+	client := &Client{service: fakeService, config: &fakeConfigService{}}
+	if _, err := client.UpdateService(ctx, serviceID, nil, nil, nil, false, []string{"egress-services", "private-resource-id"}, true); err != nil {
 		t.Fatalf("update service: %v", err)
 	}
 }
